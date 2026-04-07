@@ -852,6 +852,29 @@
   font-weight: 600;
 }
 
+/* 저장된 방식 카드 목록 */
+.saved-strategy-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.saved-strategy-card {
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px; padding: 12px 16px;
+  cursor: pointer; transition: border-color 0.2s, background 0.2s;
+}
+.saved-strategy-card:hover { border-color: var(--cv-accent); background: rgba(96,165,250,0.04); }
+.ssc-info { flex: 1; min-width: 0; }
+.ssc-name { font-size: 0.88em; font-weight: 700; color: var(--cv-text); margin-bottom: 3px; }
+.ssc-desc { font-size: 0.75em; color: var(--cv-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ssc-meta { font-size: 0.7em; color: var(--cv-accent); margin-top: 4px; }
+.ssc-actions { display: flex; gap: 6px; margin-left: 12px; flex-shrink: 0; }
+.ssc-btn {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);
+  background: none; color: var(--cv-dim); font-size: 0.72em; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.ssc-btn:hover { background: rgba(255,255,255,0.06); color: var(--cv-text); }
+.ssc-del:hover { background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.3); }
+
 /* 저장된 방식 트리 리스트 */
 .cc-strategy-tree {
   margin: 8px 0;

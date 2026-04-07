@@ -628,6 +628,8 @@ var CardBuilder = (function () {
     getCurrentStrategy: function () { return _currentStrategy; },
     getStrategies: function () { return _strategies; },
     loadAndDisplayStrategy: function (s) { _displayStrategyCards(s); },
+    deleteStrategy: function (id) { _send({ type: 'delete_strategy', data: { strategy_id: id } }); },
+    setPendingEditMode: function (v) { _pendingEditMode = !!v; },
     validateTask: validateTask,
   };
 })();

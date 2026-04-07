@@ -237,28 +237,97 @@ var CardView = (function () {
       _chatPanel.addMessage('저장된 방식이 없습니다. "새 방식 만들기" 탭에서 방식을 설계하고 저장하세요.', 'system');
       return;
     }
-    _chatPanel.addMessage('저장된 방식 중 하나를 선택하세요:', 'system');
-    var btns = strategies.map(function (s) {
-      return {
-        label: s.name || '방식',
-        icon: '📊',
-        action: function () {
-          CardBuilder.loadAndDisplayStrategy(s);
-          if (_chatPanel) {
-            _chatPanel.addMessage('✅ "' + (s.name || '방식') + '" 방식이 로드되었습니다.', 'system');
-            _chatPanel.showFormatSelector([
-              { id: 'html', label: 'HTML', icon: '📄', default: true },
-              { id: 'pdf', label: 'PDF', icon: '📑' },
-              { id: 'markdown', label: 'Markdown', icon: '📝' },
-              { id: 'csv', label: 'CSV', icon: '📊' },
-              { id: 'json', label: 'JSON', icon: '{}' },
-            ]);
-            _chatPanel.setInputPlaceholder('이 방식으로 업무를 지시하세요...');
-          }
-        },
-      };
+
+    // 저장된 방식 카드 목록 (선택 + 수정 + 삭제)
+    var listEl = document.createElement('div');
+    listEl.className = 'saved-strategy-list';
+
+    strategies.forEach(function (s) {
+      var card = document.createElement('div');
+      card.className = 'saved-strategy-card';
+
+      var info = document.createElement('div');
+      info.className = 'ssc-info';
+      info.addEventListener('click', function () { _loadSavedStrategy(s); });
+
+      var name = document.createElement('div');
+      name.className = 'ssc-name';
+      name.textContent = s.name || '방식';
+      var desc = document.createElement('div');
+      desc.className = 'ssc-desc';
+      desc.textContent = s.description || '';
+      var meta = document.createElement('div');
+      meta.className = 'ssc-meta';
+      var perspectives = s.perspectives || [];
+      meta.textContent = perspectives.length + '개 관점 · ' + (s.depth === 'deep' ? '심층' : s.depth === 'light' ? '간략' : '표준');
+      info.appendChild(name);
+      info.appendChild(desc);
+      info.appendChild(meta);
+
+      var actions = document.createElement('div');
+      actions.className = 'ssc-actions';
+
+      var editBtn = document.createElement('button');
+      editBtn.className = 'ssc-btn ssc-edit';
+      editBtn.textContent = '수정';
+      editBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _editSavedStrategy(s);
+      });
+
+      var delBtn = document.createElement('button');
+      delBtn.className = 'ssc-btn ssc-del';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _deleteSavedStrategy(s, card);
+      });
+
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+      card.appendChild(info);
+      card.appendChild(actions);
+      listEl.appendChild(card);
     });
-    _chatPanel.addActionButtons(btns);
+
+    _chatPanel.messagesEl.appendChild(listEl);
+    _chatPanel.messagesEl.scrollTop = _chatPanel.messagesEl.scrollHeight;
+  }
+
+  function _loadSavedStrategy(s) {
+    CardBuilder.loadAndDisplayStrategy(s);
+    if (_chatPanel) {
+      _chatPanel.addMessage('✅ "' + (s.name || '방식') + '" 방식이 로드되었습니다.', 'system');
+      _chatPanel.showFormatSelector([
+        { id: 'html', label: 'HTML', icon: '📄', default: true },
+        { id: 'pdf', label: 'PDF', icon: '📑' },
+        { id: 'markdown', label: 'Markdown', icon: '📝' },
+        { id: 'csv', label: 'CSV', icon: '📊' },
+        { id: 'json', label: 'JSON', icon: '{}' },
+      ]);
+      _chatPanel.setInputPlaceholder('이 방식으로 업무를 지시하세요...');
+    }
+  }
+
+  function _deleteSavedStrategy(s, cardEl) {
+    if (!confirm('"' + (s.name || '방식') + '" 을 삭제하시겠습니까?')) return;
+    CardBuilder.deleteStrategy(s.id);
+    if (cardEl && cardEl.parentNode) {
+      cardEl.style.opacity = '0.3';
+      cardEl.style.pointerEvents = 'none';
+      setTimeout(function () { cardEl.remove(); }, 300);
+    }
+  }
+
+  function _editSavedStrategy(s) {
+    // 새 방식 만들기 탭으로 전환하고, 수정 요청 모드로 진입
+    _switchBuilderSubTab('create');
+    CardBuilder.loadAndDisplayStrategy(s);
+    if (_chatPanel) {
+      _chatPanel.addMessage('✏️ "' + (s.name || '방식') + '" 방식을 수정합니다. 수정할 내용을 입력하세요.', 'system');
+      _chatPanel.setInputPlaceholder('수정 요청을 입력하세요... (예: "관점 하나 추가해줘")');
+      CardBuilder.setPendingEditMode(true);
+    }
   }
 
   function _hideCompanyUI() {
