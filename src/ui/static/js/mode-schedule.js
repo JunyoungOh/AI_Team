@@ -336,6 +336,17 @@ var ScheduleTeamManager = (function () {
         reportLink.href = lastRun.report_path;
         reportLink.target = '_blank';
         reportLink.textContent = '📄 보고서 보기';
+        reportLink.addEventListener('click', function (e) {
+          e.preventDefault();
+          var url = this.href;
+          fetch(url, { method: 'HEAD' }).then(function (res) {
+            if (res.ok) {
+              window.open(url, '_blank');
+            } else {
+              alert('보고서 파일이 삭제되었습니다.');
+            }
+          });
+        });
         reportRow.appendChild(reportLink);
 
         var folderBtn = document.createElement('button');
@@ -347,6 +358,8 @@ var ScheduleTeamManager = (function () {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: localPath }),
+          }).then(function (res) { return res.json(); }).then(function (data) {
+            if (!data.ok) alert('폴더를 찾을 수 없습니다.');
           });
         });
         reportRow.appendChild(folderBtn);
