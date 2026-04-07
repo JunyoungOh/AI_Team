@@ -1,0 +1,913 @@
+"""FastAPI WebSocket server for Corporate Simulation UI.
+
+Endpoints:
+  GET  /              → Serve index.html (requires auth when membership enabled)
+  WS   /ws            → AI Company mode (corporate simulation)
+  WS   /ws/disc       → AI Discussion mode (multi-agent debate)
+  WS   /ws/sec        → AI Secretary mode (fast chat assistant)
+  WS   /ws/eng        → AI Engineering mode (code generation with phases)
+  WS   /ws/datalab    → AI DataLab mode (data analysis with Zero-Retention)
+  WS   /ws/foresight  → AI Foresight mode (trend analysis)
+  WS   /ws/dandelion  → Dandelion Foresight mode (multi-agent imagination)
+  POST /api/auth/*    → Login, register, logout, admin
+  GET  /api/eng/download/{session_id}   → Download Engineering project zip
+  POST /api/eng/upload/{session_id}     → Upload file to Engineering session
+  POST /api/datalab/upload              → Upload file to DataLab session
+  GET  /api/datalab/download/{sid}/{fn} → Download result from DataLab session
+  POST /api/foresight/upload             → Upload file to Foresight session
+  GET  /api/foresight/download/{sid}/{fn} → Download result from Foresight session
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from src.auth.routes import router as auth_router
+from src.auth.security import verify_token
+from src.persona.routes import router as persona_router
+from src.config.settings import get_settings
+from src.discussion.session import DiscussionSession
+from src.secretary.history_store import HistoryStore
+from src.secretary.mode_injector import get_injected_task, get_injector_for_task
+from src.secretary.session import SecretarySession
+from src.datalab.security import purge_orphan_sessions
+from src.ui.sim_runner import SimSession
+from src.ui.routes.engineering import router as eng_router
+from src.ui.routes.datalab import router as datalab_router
+from src.ui.routes.foresight import router as foresight_router
+from src.ui.routes.discussion import router as discussion_router
+
+app = FastAPI(title="Enterprise Agent Simulation")
+
+# ── CORS ─────────────────────────────────────────
+_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+if _ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# ── Routers ──────────────────────────────────────
+app.include_router(auth_router)
+app.include_router(persona_router)
+app.include_router(eng_router)
+app.include_router(datalab_router)
+app.include_router(foresight_router)
+app.include_router(discussion_router)
+
+
+def _membership_enabled() -> bool:
+    """Membership system is active when MEMBERSHIP_ENABLED is True (default)."""
+    return get_settings().membership_enabled
+
+
+def _verify_ws_token(ws: WebSocket) -> dict | None:
+    """Extract user from JWT cookie on WebSocket connection."""
+    token = ws.cookies.get("hq_token", "")
+    if not token:
+        return None
+    return verify_token(token)
+
+
+# ── Auth gate (HTTP middleware) ──────────────────
+@app.middleware("http")
+async def auth_gate(request: Request, call_next):
+    """JWT-based auth gate — skip if membership not enabled."""
+    if not _membership_enabled():
+        return await call_next(request)
+
+    path = request.url.path
+
+    # Always allow: health, static assets, auth API
+    if path in ("/health", "/favicon.ico") or path.startswith(("/api/auth/", "/reports/")):
+        return await call_next(request)
+
+    # Check JWT cookie
+    token = request.cookies.get("hq_token", "")
+    if token and verify_token(token):
+        return await call_next(request)
+
+    # Unauthenticated — serve login page for root, 401 for API
+    if path == "/" or path.startswith("/api/"):
+        # Root serves index.html which has its own login UI
+        if path == "/":
+            return await call_next(request)
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    return await call_next(request)
+
+
+# ── Health check ─────────────────────────────────
+@app.get("/health")
+async def health():
+    result = {"status": "ok", "membership": _membership_enabled()}
+    try:
+        # Report RSS memory in MB (Linux /proc)
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    rss_kb = int(line.split()[1])
+                    result["rss_mb"] = round(rss_kb / 1024, 1)
+                    break
+    except Exception:
+        pass
+    return result
+
+
+_scheduler_service = None
+
+
+@app.on_event("startup")
+async def _startup_cleanup():
+    """Run retention cleanup on server start."""
+    result = HistoryStore.run_retention_cleanup()
+    if result["archived"] or result["deleted"]:
+        import logging
+        logging.getLogger(__name__).info(
+            "history_retention: archived=%d, deleted=%d",
+            result["archived"], result["deleted"],
+        )
+    # Cleanup expired discussion reports (24h retention)
+    try:
+        from src.auth.models import UserDB
+        expired = UserDB.get().cleanup_expired_reports()
+        if expired:
+            import logging
+            logging.getLogger(__name__).info(
+                "discussion_reports_cleanup: deleted=%d", expired,
+            )
+    except Exception:
+        pass
+    # Purge orphan DataLab sessions from previous server runs
+    import tempfile
+    purged = purge_orphan_sessions(tempfile.gettempdir())
+    if purged:
+        import logging
+        logging.getLogger(__name__).info(
+            "datalab_orphan_cleanup: purged=%d", purged,
+        )
+    # Dandelion expired report cleanup
+    from src.ui.routes.foresight import dandelion_cleanup_startup
+    await dandelion_cleanup_startup()
+    # Start scheduler service for cron-based execution
+    try:
+        from src.scheduler.service import SchedulerService
+        global _scheduler_service
+        _scheduler_service = SchedulerService()
+        await _scheduler_service.start()
+        import logging
+        logging.getLogger(__name__).info("scheduler_service_started")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("scheduler_start_failed: %s", e)
+        _scheduler_service = None
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/")
+async def index():
+    """Serve the simulation UI (no-cache to ensure latest code)."""
+    return FileResponse(
+        _STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@app.get("/static/{filename:path}")
+async def static_file(filename: str):
+    """Serve static assets (images, subdirectories like disc-avatars/)."""
+    path = (_STATIC_DIR / filename).resolve()
+    if not path.is_relative_to(_STATIC_DIR) or not path.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    cache = "no-cache" if filename.endswith((".js", ".css")) else "public, max-age=86400"
+    return FileResponse(path, headers={"Cache-Control": cache})
+
+
+# ── Discussion report history API ────────────────
+@app.get("/api/reports/discussion")
+async def list_discussion_reports(request: Request):
+    """List user's non-expired discussion reports."""
+    token = request.cookies.get("hq_token", "")
+    user = verify_token(token) if token else None
+    if not user:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    from src.auth.models import UserDB
+    reports = UserDB.get().list_discussion_reports(user["sub"])
+    return JSONResponse({"reports": reports})
+
+
+@app.delete("/api/reports/discussion/{report_id}")
+async def delete_discussion_report(report_id: str, request: Request):
+    """Delete a specific discussion report."""
+    token = request.cookies.get("hq_token", "")
+    user = verify_token(token) if token else None
+    if not user:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    from src.auth.models import UserDB
+    deleted = UserDB.get().delete_discussion_report(report_id, user["sub"])
+    return JSONResponse({"deleted": deleted})
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    """Main WebSocket endpoint for simulation sessions."""
+    await ws.accept()
+
+    # Auth check for WebSocket
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+
+    user_id = user["sub"] if user else ""
+    inject_id = ws.query_params.get("inject", "")
+
+    if inject_id:
+        injector = get_injector_for_task(inject_id)
+        bg = get_injected_task(inject_id)
+        if not bg or not injector or bg.mode != "company":
+            await ws.send_json({"type": "error", "data": {"message": "Company 세션을 찾을 수 없습니다."}})
+            return
+
+        try:
+            await injector.subscribe_company(inject_id, ws)
+            while True:
+                try:
+                    msg = await ws.receive_json()
+                    if msg.get("type") in ("stop", "disconnect"):
+                        break
+                except Exception:
+                    break
+        finally:
+            injector.unsubscribe_company(inject_id, ws)
+        return
+
+    session = SimSession(ws, user_id=user_id)
+    try:
+        await session.run()
+    except WebSocketDisconnect:
+        session.cancel()
+    except Exception as e:
+        try:
+            await ws.send_json({"type": "error", "data": {"message": str(e)}})
+        except Exception:
+            pass
+        session.cancel()
+
+
+@app.websocket("/ws/disc")
+async def discussion_endpoint(ws: WebSocket):
+    """WebSocket endpoint for AI Discussion sessions."""
+    await ws.accept()
+
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+
+    user_id = user["sub"] if user else ""
+    inject_id = ws.query_params.get("inject", "")
+
+    if inject_id:
+        injector = get_injector_for_task(inject_id)
+        bg = get_injected_task(inject_id)
+        if not bg or not injector:
+            await ws.send_json({"type": "error", "data": {"message": "토론 세션을 찾을 수 없습니다."}})
+            return
+
+        try:
+            await injector.subscribe_disc(inject_id, ws)
+            while True:
+                try:
+                    msg = await ws.receive_json()
+                    if msg.get("type") == "disc_stop":
+                        break
+                except Exception:
+                    break
+        finally:
+            injector.unsubscribe_disc(inject_id, ws)
+        return
+
+    session = DiscussionSession(ws, user_id=user_id)
+    try:
+        await session.run()
+    except WebSocketDisconnect:
+        session.cancel()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("disc_endpoint_crash: %s", e, exc_info=True)
+        try:
+            await ws.send_json({"type": "error", "data": {"message": str(e)}})
+        except Exception:
+            pass
+        session.cancel()
+
+
+@app.websocket("/ws/sec")
+async def secretary_endpoint(ws: WebSocket):
+    """WebSocket endpoint for AI Secretary sessions."""
+    await ws.accept()
+
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+
+    user_id = user["sub"] if user else ""
+
+    session = SecretarySession(ws, user_id=user_id)
+    try:
+        await session.run()
+    except WebSocketDisconnect:
+        session.cancel()
+    except Exception as e:
+        try:
+            await ws.send_json({"type": "error", "data": {"message": str(e)}})
+        except Exception:
+            pass
+        session.cancel()
+
+
+@app.websocket("/ws/company-builder")
+async def company_builder_endpoint(ws: WebSocket):
+    """WebSocket endpoint for Company Builder (team design) sessions."""
+    await ws.accept()
+
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+
+    user_id = user["sub"] if user else ""
+
+    from src.company_builder.builder_agent import BuilderSession, StrategyBuilderSession
+    from src.company_builder import storage
+
+    session = BuilderSession(user_id=user_id)
+    strategy_session = StrategyBuilderSession(user_id=user_id)
+
+    try:
+        # Send initial lists (companies + strategies)
+        companies = storage.list_companies(user_id)
+        strategies = storage.list_strategies(user_id)
+        await ws.send_json({"type": "builder_companies", "data": {"companies": companies}})
+        await ws.send_json({"type": "builder_strategies", "data": {"strategies": strategies}})
+
+        while True:
+            msg = await ws.receive_json()
+            msg_type = msg.get("type", "")
+
+            if msg_type == "builder_message":
+                content = msg.get("data", {}).get("content", "")
+                if content:
+                    await session.stream_response(content, ws)
+
+            elif msg_type == "save_company":
+                company = msg.get("data", {})
+                saved = storage.save_company(user_id, company)
+                await ws.send_json({"type": "company_saved", "data": saved})
+                # Refresh sidebar list
+                companies = storage.list_companies(user_id)
+                await ws.send_json({"type": "builder_companies", "data": {"companies": companies}})
+
+            elif msg_type == "load_company":
+                cid = msg.get("data", {}).get("company_id", "")
+                company = storage.load_company(user_id, cid)
+                if company:
+                    await ws.send_json({"type": "company_loaded", "data": company})
+                else:
+                    await ws.send_json({"type": "error", "data": {"message": "회사를 찾을 수 없습니다."}})
+
+            elif msg_type == "delete_company":
+                cid = msg.get("data", {}).get("company_id", "")
+                storage.delete_company(user_id, cid)
+                # Cascade: delete related schedules
+                try:
+                    from src.company_builder import schedule_storage as ss
+                    for sched in ss.list_schedules(user_id):
+                        if sched.get("company_id") == cid:
+                            ss.delete_schedule(user_id, sched["id"])
+                except Exception:
+                    pass  # non-critical
+                await ws.send_json({"type": "company_deleted", "data": {"company_id": cid}})
+                # Refresh sidebar list
+                companies = storage.list_companies(user_id)
+                await ws.send_json({"type": "builder_companies", "data": {"companies": companies}})
+
+            elif msg_type == "validate_task":
+                task = msg.get("data", {}).get("task", "")
+                team_id = msg.get("data", {}).get("team_id", "")
+                company = storage.load_company(user_id, team_id) if team_id else None
+                agents = company.get("agents", []) if company else []
+
+                all_companies = storage.list_companies(user_id)
+                saved_teams = []
+                for co in all_companies:
+                    if co.get("id") != team_id:
+                        full = storage.load_company(user_id, co["id"])
+                        if full:
+                            saved_teams.append(full)
+
+                from src.company_builder.team_validator import validate_task_team_fit_async
+                result = await validate_task_team_fit_async(task, agents, saved_teams)
+                await ws.send_json({"type": "task_validation", "data": result})
+
+            elif msg_type == "list_companies":
+                companies = storage.list_companies(user_id)
+                await ws.send_json({"type": "builder_companies", "data": {"companies": companies}})
+
+            # ── Schedule operations ──
+            elif msg_type == "save_schedule":
+                from src.company_builder import schedule_storage as ss
+                sched_data = msg.get("data", {})
+                saved = ss.save_schedule(user_id, sched_data)
+                await ws.send_json({"type": "schedule_saved", "data": saved})
+
+            elif msg_type == "list_schedules":
+                from src.company_builder import schedule_storage as ss
+                schedules = ss.list_schedules(user_id)
+                await ws.send_json({"type": "schedule_list", "data": {"schedules": schedules}})
+
+            elif msg_type == "toggle_schedule":
+                from src.company_builder import schedule_storage as ss
+                sid = msg.get("data", {}).get("schedule_id", "")
+                enabled = msg.get("data", {}).get("enabled", True)
+                result = ss.toggle_schedule(user_id, sid, enabled)
+                if result:
+                    await ws.send_json({"type": "schedule_toggled", "data": result})
+
+            elif msg_type == "delete_schedule":
+                from src.company_builder import schedule_storage as ss
+                sid = msg.get("data", {}).get("schedule_id", "")
+                ss.delete_schedule(user_id, sid)
+                await ws.send_json({"type": "schedule_deleted", "data": {"schedule_id": sid}})
+
+            elif msg_type == "generate_schedule_questions":
+                # 고정 질문 대신 상세 설명 입력 폼을 표시하도록 신호 전송
+                await ws.send_json({"type": "schedule_detail_prompt", "data": {}})
+
+            elif msg_type == "run_schedule_now":
+                sid = msg.get("data", {}).get("schedule_id", "")
+                from src.company_builder import schedule_storage as ss
+                sched = ss.load_schedule(user_id, sid)
+                if sched:
+                    await ws.send_json({"type": "schedule_running", "data": {"schedule_id": sid}})
+                    try:
+                        from src.company_builder.scheduler import _to_scheduled_job
+                        from src.scheduler.runner import HeadlessGraphRunner
+                        job = _to_scheduled_job(sched, user_id)
+                        runner = HeadlessGraphRunner()
+                        record = await runner.execute_job(job)
+
+                        status = record.status.value if record.status else "unknown"
+                        duration = round(record.duration_seconds or 0, 1)
+
+                        # report_path: summary에서 가져오거나, thread_id로 직접 탐색
+                        report_path = ""
+                        if record.final_state_summary:
+                            report_path = record.final_state_summary.get("report_path", "")
+                        if not report_path and record.thread_id:
+                            import os
+                            candidate = f"data/reports/{record.thread_id}"
+                            if os.path.isdir(candidate):
+                                report_path = f"/reports/{record.thread_id}"
+
+                        # 보고서가 있으면 completed로 간주
+                        if report_path and status == "running":
+                            status = "completed"
+
+                        ss.add_run_record(
+                            user_id, sid,
+                            run_id=record.execution_id,
+                            status=status,
+                            report_path=report_path,
+                        )
+                        await ws.send_json({"type": "schedule_run_complete", "data": {
+                            "schedule_id": sid,
+                            "status": status,
+                            "duration_s": duration,
+                        }})
+                    except Exception as e:
+                        await ws.send_json({"type": "error", "data": {"message": f"실행 실패: {str(e)[:200]}"}})
+                    # 목록 갱신
+                    schedules = ss.list_schedules(user_id)
+                    await ws.send_json({"type": "schedule_list", "data": {"schedules": schedules}})
+
+            # ── Strategy operations (분석 전략 프리셋) ──
+            elif msg_type == "strategy_message":
+                content = msg.get("data", {}).get("content", "")
+                if content:
+                    await strategy_session.stream_response(content, ws)
+
+            elif msg_type == "save_strategy":
+                strat = msg.get("data", {})
+                saved = storage.save_strategy(user_id, strat)
+                await ws.send_json({"type": "strategy_saved", "data": saved})
+                strategies = storage.list_strategies(user_id)
+                await ws.send_json({"type": "builder_strategies", "data": {"strategies": strategies}})
+
+            elif msg_type == "load_strategy":
+                sid = msg.get("data", {}).get("strategy_id", "")
+                strat = storage.load_strategy(user_id, sid)
+                if strat:
+                    await ws.send_json({"type": "strategy_loaded", "data": strat})
+
+            elif msg_type == "delete_strategy":
+                sid = msg.get("data", {}).get("strategy_id", "")
+                storage.delete_strategy(user_id, sid)
+                await ws.send_json({"type": "strategy_deleted", "data": {"strategy_id": sid}})
+                strategies = storage.list_strategies(user_id)
+                await ws.send_json({"type": "builder_strategies", "data": {"strategies": strategies}})
+
+            elif msg_type == "list_strategies":
+                strategies = storage.list_strategies(user_id)
+                await ws.send_json({"type": "builder_strategies", "data": {"strategies": strategies}})
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("company_builder_crash: %s", e, exc_info=True)
+        try:
+            await ws.send_json({"type": "error", "data": {"message": str(e)}})
+        except Exception:
+            pass
+
+
+@app.websocket("/ws/overtime")
+async def overtime_endpoint(ws: WebSocket):
+    """WebSocket endpoint for 야근팀 (goal-driven iterative execution)."""
+    await ws.accept()
+
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+
+    user_id = user["sub"] if user else ""
+
+    import asyncio
+    import uuid
+    from src.company_builder import storage
+    from src.overtime.runner import run_overtime
+    from src.modes.common import get_mode_event_queue
+
+    _overtime_task: asyncio.Task | None = None
+    _session_id = ""
+
+    async def _drain_events():
+        """mode event queue를 폴링하여 WS로 전달."""
+        try:
+            while True:
+                q = get_mode_event_queue(_session_id)
+                while not q.empty():
+                    ev = q.get_nowait()
+                    try:
+                        await ws.send_json(ev)
+                    except Exception:
+                        return
+                await asyncio.sleep(0.3)
+        except asyncio.CancelledError:
+            pass
+
+    try:
+        # 기존 야근팀 목록 전송
+        overtimes = storage.list_overtimes(user_id)
+        await ws.send_json({"type": "overtime_list", "data": {"overtimes": overtimes}})
+
+        while True:
+            msg = await ws.receive_json()
+            msg_type = msg.get("type", "")
+
+            if msg_type == "generate_overtime_questions":
+                # 고정 질문 대신 상세 설명 입력 폼을 표시하도록 신호 전송
+                await ws.send_json({"type": "overtime_detail_prompt", "data": {}})
+
+            elif msg_type == "start_overtime":
+                data = msg.get("data", {})
+                task = data.get("task", "")
+                strategy = data.get("strategy")
+                goal = data.get("goal", "충분한 데이터 확보")
+                max_iterations = data.get("max_iterations", 5)
+                # 상세 설명 또는 레거시 명확화 답변을 task에 추가
+                detail = data.get("detail_description", "")
+                if detail:
+                    task += f"\n\n## 상세 설명\n{detail}"
+                else:
+                    clarify_answers = data.get("clarify_answers", [])
+                    if clarify_answers:
+                        qa_text = "\n\n## 사용자 사전 답변"
+                        for qa in clarify_answers:
+                            q = qa.get("question", "")
+                            a = qa.get("answer", "")
+                            if q and a:
+                                qa_text += f"\nQ: {q}\nA: {a}"
+                        task += qa_text
+
+                _session_id = str(uuid.uuid4())[:8]
+
+                # overtime 레코드 생성
+                ot = storage.save_overtime(user_id, {
+                    "name": task[:50],
+                    "task": task,
+                    "strategy": strategy,
+                    "goal": goal,
+                    "max_iterations": max_iterations,
+                    "status": "running",
+                    "current_iteration": 0,
+                    "iterations": [],
+                    "session_id": _session_id,
+                })
+
+                await ws.send_json({"type": "overtime_started", "data": {
+                    "overtime_id": ot["id"],
+                    "session_id": _session_id,
+                }})
+
+                # 이벤트 drain + 실행을 동시 시작
+                drain_task = asyncio.create_task(_drain_events())
+                _overtime_task = asyncio.create_task(run_overtime(
+                    task=task, strategy=strategy, goal=goal,
+                    session_id=_session_id, user_id=user_id,
+                    max_iterations=max_iterations, overtime_id=ot["id"],
+                ))
+
+                try:
+                    await _overtime_task
+                except Exception as e:
+                    await ws.send_json({"type": "error", "data": {"message": str(e)[:300]}})
+                finally:
+                    # 남은 이벤트 flush 후 drain 중단
+                    await asyncio.sleep(0.5)
+                    q = get_mode_event_queue(_session_id)
+                    while not q.empty():
+                        ev = q.get_nowait()
+                        try:
+                            await ws.send_json(ev)
+                        except Exception:
+                            break
+                    drain_task.cancel()
+                    try:
+                        await drain_task
+                    except asyncio.CancelledError:
+                        pass
+
+            elif msg_type == "stop_overtime":
+                if _overtime_task and not _overtime_task.done():
+                    _overtime_task.cancel()
+                    await ws.send_json({"type": "overtime_stopped", "data": {}})
+
+            elif msg_type == "list_overtimes":
+                overtimes = storage.list_overtimes(user_id)
+                await ws.send_json({"type": "overtime_list", "data": {"overtimes": overtimes}})
+
+    except WebSocketDisconnect:
+        if _overtime_task and not _overtime_task.done():
+            _overtime_task.cancel()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("overtime_crash: %s", e, exc_info=True)
+
+
+@app.websocket("/ws/agent")
+async def agent_mode_endpoint(ws: WebSocket):
+    """WebSocket endpoint for AI Agent mode sessions."""
+    await ws.accept()
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+    user_id = user["sub"] if user else ""
+
+    from src.agent_mode.session import AgentSession
+    session = AgentSession(ws, user_id=user_id)
+    try:
+        await session.run()
+    except WebSocketDisconnect:
+        session.cancel()
+    except Exception as e:
+        try:
+            await ws.send_json({"type": "error", "data": {"message": str(e)}})
+        except Exception:
+            pass
+        session.cancel()
+
+
+# ── Persona Workshop interview ─────────────────
+
+@app.websocket("/ws/persona")
+async def persona_interview_endpoint(ws: WebSocket):
+    """WebSocket endpoint for persona interview sessions."""
+    await ws.accept()
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+    user_id = user["sub"] if user else ""
+
+    from src.persona.interview import InterviewSession
+    session = InterviewSession(ws, user_id=user_id)
+    try:
+        await session.run()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await ws.send_json({"type": "error", "data": {"message": str(e)}})
+        except Exception:
+            pass
+
+
+# ── Engineering/DataLab/Foresight/Dandelion routes → src/ui/routes/ ──
+# (추출 완료 — eng_router, datalab_router, foresight_router로 include됨)
+
+
+
+_REPORTS_DIR = Path(__file__).parents[2] / "data" / "reports"
+_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+_DATA_DIR = Path(__file__).parents[2] / "data"
+
+
+@app.get("/preview-file")
+async def preview_file(path: str):
+    """Serve a file for inline preview (restricted to data/ directory)."""
+    resolved = Path(path).resolve()
+    if not str(resolved).startswith(str(_DATA_DIR.resolve())):
+        return HTMLResponse("<p>Access denied</p>", status_code=403)
+    if not resolved.exists() or not resolved.is_file():
+        return HTMLResponse("<p>File not found</p>", status_code=404)
+    suffix = resolved.suffix.lower()
+    if suffix in (".html", ".htm"):
+        return FileResponse(resolved, media_type="text/html")
+    if suffix == ".md":
+        return FileResponse(resolved, media_type="text/plain")
+    return FileResponse(resolved)
+
+
+@app.post("/api/open-folder")
+async def open_folder(request: Request):
+    """Open a local folder in Finder/Explorer."""
+    data = await request.json()
+    folder_path = data.get("path", "")
+    if not folder_path:
+        return {"ok": False, "error": "path required"}
+    from pathlib import Path as _P
+    resolved = _P(folder_path).resolve()
+    if not resolved.exists():
+        return {"ok": False, "error": "path not found"}
+    import subprocess as _sp
+    import platform
+    try:
+        if platform.system() == "Darwin":
+            _sp.Popen(["open", str(resolved)])
+        elif platform.system() == "Windows":
+            _sp.Popen(["explorer", str(resolved)])
+        else:
+            _sp.Popen(["xdg-open", str(resolved)])
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:100]}
+
+
+@app.get("/reports/{session_id}")
+async def report_main(session_id: str):
+    """Serve the main report HTML or a folder listing from a session directory.
+
+    Tries filenames in priority order, then dated files, then folder listing.
+    """
+    import glob as glob_mod
+    session_dir = (_REPORTS_DIR / session_id).resolve()
+    if not str(session_dir).startswith(str(_REPORTS_DIR.resolve())):
+        return HTMLResponse("<p>Access denied</p>", status_code=403)
+    if not session_dir.exists():
+        return HTMLResponse("<p>Report not found</p>", status_code=404)
+
+    # 1) 고정 파일명 우선 탐색
+    for name in ("results.html", "result.html", "result_whole.html", "report.html"):
+        candidate = session_dir / name
+        if candidate.exists():
+            return FileResponse(candidate, media_type="text/html")
+
+    # 2) 날짜 파일명 (최신순)
+    dated = sorted(glob_mod.glob(str(session_dir / "results_*.html")), reverse=True)
+    if dated:
+        return FileResponse(dated[0], media_type="text/html")
+
+    # 3) 폴더 리스팅 (파일 목록 페이지)
+    files = sorted(session_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
+    if files:
+        import html as html_mod
+        rows = []
+        for f in files:
+            if not f.is_file():
+                continue
+            name = html_mod.escape(f.name)
+            size = f.stat().st_size
+            size_str = f"{size / 1024:.1f} KB" if size > 1024 else f"{size} B"
+            url = f"/reports/{session_id}/{f.name}"
+            rows.append(f'<tr><td><a href="{url}">{name}</a></td><td>{size_str}</td></tr>')
+        title = html_mod.escape(session_id)
+        return HTMLResponse(
+            f'<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">'
+            f'<title>{title}</title>'
+            f'<style>body{{font-family:sans-serif;max-width:700px;margin:40px auto;padding:0 20px}}'
+            f'table{{width:100%;border-collapse:collapse}}td,th{{padding:8px 12px;text-align:left;border-bottom:1px solid #eee}}'
+            f'a{{color:#0066cc;text-decoration:none}}a:hover{{text-decoration:underline}}</style></head>'
+            f'<body><h1>{title}</h1><table><tr><th>파일</th><th>크기</th></tr>{"".join(rows)}</table></body></html>'
+        )
+
+    return HTMLResponse("<p>Report not found</p>", status_code=404)
+
+
+app.mount("/reports", StaticFiles(directory=str(_REPORTS_DIR), html=False), name="reports")
+
+
+# ── Advisory endpoint (separate from main pipeline) ──
+
+from pydantic import BaseModel as _PydanticBase
+
+
+class _AdvisoryRequest(_PydanticBase):
+    report_path: str
+    session_id: str
+    persona_ids: list[str]
+    user_id: str = ""
+
+
+@app.post("/api/advisory")
+async def advisory_endpoint(req: _AdvisoryRequest):
+    """Generate advisory comments from personas on a completed report."""
+    from src.persona.advisory import generate_advisory_comments
+
+    # Read report HTML from report directory
+    report_text = ""
+    rp = Path(req.report_path)
+    if rp.is_dir():
+        for name in ("results.html", "result.html", "result_whole.html"):
+            candidate = rp / name
+            if candidate.exists():
+                try:
+                    report_text = candidate.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+                break
+
+    if not report_text:
+        return {"comments": [], "error": "Report not found"}
+
+    # Use actual user_id for persona access control (fallback to session_id)
+    uid = req.user_id or req.session_id
+
+    try:
+        comments = await generate_advisory_comments(
+            report_text=report_text,
+            persona_ids=req.persona_ids,
+            user_id=uid,
+        )
+        return {"comments": comments}
+    except Exception as e:
+        return {"comments": [], "error": str(e)}
+
+
+
+def start_sim_server(host: str = "0.0.0.0", port: int = 8420):
+    """Start the simulation UI server and auto-open the browser."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+    from rich.console import Console
+
+    console = Console()
+    url = f"http://{host}:{port}"
+
+    console.print()
+    console.print(f"  [bold magenta]Enterprise HQ[/bold magenta] — Corporate Simulation UI")
+    console.print(f"  [dim]Server:[/dim] {url}")
+    if _membership_enabled():
+        console.print(f"  [dim]Membership:[/dim] enabled")
+    console.print(f"  [dim]Press Ctrl+C to stop[/dim]")
+    console.print()
+
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    uvicorn.run(app, host=host, port=port, log_level="warning")

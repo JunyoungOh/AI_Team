@@ -1,0 +1,2322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise HQ — Corporate Simulation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --bg2: #161b22; --border: #30363d;
+  --text: #e6edf3; --dim: #8b949e;
+  --red: #e94560; --green: #2ecc71; --yellow: #f39c12; --blue: #4A90D9; --purple: #9B59B6;
+}
+body { font-family: 'Outfit', 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
+#app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 1fr 320px; grid-template-areas: "hd hd" "cv sb"; height: 100vh; }
+
+/* Header */
+#hdr { grid-area: hd; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+#hdr h1 { font-size: 1.05em; color: var(--red); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #e74c3c; display: inline-block; margin-right: 8px; }
+.dot.on { background: var(--green); }
+#step-lbl { font-size: 0.85em; color: var(--yellow); }
+#timer { font-size: 0.8em; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Canvas area */
+#cv-wrap { grid-area: cv; display: flex; align-items: center; justify-content: center; background: #0a0a18; overflow: hidden; }
+#game { image-rendering: pixelated; image-rendering: crisp-edges; border-radius: 4px; max-width: 100%; max-height: 100%; }
+
+/* Sidebar */
+#sb { grid-area: sb; display: flex; flex-direction: column; background: var(--bg2); border-left: 1px solid var(--border); overflow: hidden; }
+#sb h3 { padding: 10px 14px 6px; font-size: 0.75em; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+#log-wrap { flex: 1; overflow-y: auto; }
+#log { padding: 6px 14px; }
+.le { padding: 3px 0; font-size: 0.78em; border-bottom: 1px solid rgba(255,255,255,0.03); animation: fi .3s; }
+.le .t { color: var(--dim); margin-right: 6px; font-size: 0.85em; }
+.le.ceo { color: var(--blue); } .le.leader { color: var(--green); }
+.le.worker { color: var(--red); } .le.system { color: var(--yellow); } .le.error { color: #e74c3c; font-weight: 600; }
+.le.hide-filter { display: none; }
+@keyframes fi { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
+#log-filters { display: flex; gap: 4px; padding: 6px 14px 4px; flex-wrap: wrap; }
+.log-chip { padding: 2px 8px; border-radius: 10px; font-size: 0.7em; border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; transition: all .15s; }
+.log-chip.active { background: var(--border); color: var(--text); }
+#org-panel { border-top: 1px solid var(--border); max-height: 200px; overflow-y: auto; }
+#org { padding: 8px 14px; font-size: 0.78em; }
+.ol { margin-bottom: 4px; } .ol .dn { font-weight: 600; color: var(--green); }
+.ow { margin-left: 16px; color: var(--dim); }
+.ow .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.ow .status-dot.working { background: var(--yellow); animation: pulse-dot 1.5s infinite; }
+.ow .status-dot.done { background: var(--green); }
+.ow .status-dot.idle { background: var(--dim); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Overlay System ── */
+@keyframes ov-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ov-card-in { from { opacity: 0; transform: translateY(18px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes ov-shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+
+.ov {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  z-index: 100; animation: ov-fade 0.25s ease;
+  background: radial-gradient(ellipse at 50% 40%, rgba(13,17,23,0.82), rgba(0,0,0,0.92));
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.ov.h { display: none; }
+
+.oc {
+  background: linear-gradient(168deg, #1a2233 0%, #131920 100%);
+  border: 1px solid rgba(233,69,96,0.15);
+  border-radius: 20px; padding: 36px 34px;
+  max-width: 620px; width: 92%; max-height: 82vh; overflow-y: auto;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 8px 32px rgba(0,0,0,0.45), 0 32px 72px rgba(0,0,0,0.25);
+  animation: ov-card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+.oc::before {
+  content: ''; position: absolute; top: 0; left: 40px; right: 40px; height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--red) 30%, var(--purple) 70%, transparent 100%);
+  border-radius: 0 0 2px 2px; opacity: 0.8;
+}
+.oc::-webkit-scrollbar { width: 6px; }
+.oc::-webkit-scrollbar-track { background: transparent; }
+.oc::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+
+.oc h2 { margin-bottom: 16px; font-size: 1.3em; font-weight: 600; letter-spacing: -0.01em; }
+
+.oc textarea {
+  width: 100%; min-height: 70px; padding: 14px 16px; margin: 10px 0;
+  background: rgba(10,14,20,0.6); color: var(--text);
+  border: 1px solid rgba(48,54,61,0.7); border-radius: 12px;
+  font-family: inherit; font-size: 0.92em; resize: vertical; line-height: 1.6;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.oc textarea:focus {
+  outline: none; border-color: rgba(233,69,96,0.45);
+  box-shadow: 0 0 0 3px rgba(233,69,96,0.08), 0 0 20px rgba(233,69,96,0.06);
+}
+.oc textarea::placeholder { color: rgba(139,148,158,0.6); }
+
+.oc button {
+  padding: 11px 26px; margin: 4px; border: none; border-radius: 10px;
+  font-size: 0.88em; cursor: pointer; font-weight: 600; font-family: inherit;
+  letter-spacing: 0.01em; position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.oc button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); filter: brightness(1.12); }
+.oc button:active { transform: translateY(0); filter: brightness(0.95); }
+
+.bp { background: linear-gradient(135deg, var(--red) 0%, #c0392b 100%); color: #fff; }
+.bs { background: rgba(48,54,61,0.7); color: var(--text); border: 1px solid rgba(48,54,61,0.5); }
+.bc { background: linear-gradient(135deg, var(--green) 0%, #219a52 100%); color: #fff; }
+.bd { background: linear-gradient(135deg, #e74c3c 0%, #b83227 100%); color: #fff; }
+
+.ds {
+  margin: 16px 0; padding: 16px;
+  background: rgba(10,14,20,0.45); border-radius: 14px;
+  border: 1px solid rgba(48,54,61,0.4); border-left: 3px solid var(--green);
+}
+.ds h3 { font-size: 0.95em; margin-bottom: 8px; font-weight: 600; }
+.qi { margin: 10px 0; }
+.qi p { font-size: 0.88em; margin-bottom: 5px; line-height: 1.55; color: rgba(230,237,243,0.9); }
+.rs {
+  background: rgba(10,14,20,0.5); padding: 16px; border-radius: 12px;
+  font-size: 0.82em; white-space: pre-wrap; max-height: 300px; overflow-y: auto;
+  margin: 14px 0; border: 1px solid rgba(48,54,61,0.35); line-height: 1.65;
+}
+.ra { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.cc { text-align: center; } .cc h2 { color: var(--green); }
+
+#task-ov .oc { text-align: center; padding: 44px 38px; }
+#task-in { min-height: 90px; font-size: 1em; text-align: left; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hdr">
+    <div style="display:flex;align-items:center;gap:10px;"><span class="dot" id="cdot"></span><h1>Enterprise HQ</h1></div>
+    <div id="step-lbl"></div>
+    <div id="timer">0:00</div>
+  </header>
+  <div id="cv-wrap"><canvas id="game" width="960" height="540"></canvas></div>
+  <aside id="sb">
+    <h3>Activity Log</h3>
+    <div id="log-filters"></div>
+    <div id="log-wrap"><div id="log"></div></div>
+    <div id="org-panel"><h3>Organization</h3><div id="org"></div></div>
+  </aside>
+</div>
+
+<div class="ov" id="task-ov">
+  <div class="oc">
+    <div style="font-size:2.2em;margin-bottom:6px;line-height:1;">🏢</div>
+    <h2 style="font-size:1.45em;font-weight:700;letter-spacing:-0.02em;">Enterprise HQ</h2>
+    <p style="color:var(--dim);margin-bottom:18px;font-size:0.88em;letter-spacing:0.03em;">AI Corporate Simulation</p>
+    <textarea id="task-in" placeholder="작업을 지시해주세요&#10;예: 마케팅 전략을 수립해줘"></textarea>
+    <button class="bp" id="go-btn" style="padding:13px 40px;font-size:0.95em;margin-top:6px;">시작</button>
+  </div>
+</div>
+<div class="ov h" id="int-ov"><div class="oc" id="int-c"></div></div>
+<div class="ov h" id="done-ov"><div class="oc cc" id="done-c"></div></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════
+   §1  CONSTANTS
+   ═══════════════════════════════════════════════════ */
+const W = 960, H = 540;
+const WALK_SPEED = 2.2;
+const CORR_Y1 = 175, CORR_Y2 = 215, CORR_MID = 195;
+const VERT_X = 235;
+const LOBBY_ENTRY_Y = 395;
+const FPS_INTERVAL = 1000 / 60;
+const CORRIDOR_ENTRANCE_X = W + 30; /* Workers spawn off-screen right */
+
+/* ════════════════════════════════════════════════════
+   DESIGN TOKEN SYSTEM — Single Source of Truth
+   All colors referenced by semantic name, never inline hex.
+   Organized by: Structure → Furniture → Character → UI → FX
+   ════════════════════════════════════════════════════ */
+const C = {
+  /* ── Building Structure ── */
+  outerFloor: '#1A1A24',
+  corridor: '#D5C8B0',
+  corridorDark: '#4A4540',
+  corridorTile: '#3E3A32',
+  corridorBorder: '#2A2820',
+  corridorLight: '#AAA',
+  corridorDust: 'rgba(200,190,170,0.12)',
+  roomFloor: '#F0E8D8',
+  roomFloorDark: '#3A3830',
+  roomFloorDarkTile: '#32302A',
+  lobbyFloorLit: '#E8E0D0',
+  execFloor: '#F5EDE0',
+  execTile: '#EDE5D2',
+  leaderFloor: '#F0EAD8',
+  leaderTile: '#E8E2D0',
+  roomTile: '#E8E0CE',
+  wall: '#8A7E6C',
+  wallDark: '#3A3630',
+  wallInner: '#B0A494',
+  door: '#C8BB9F',
+  doorDark: '#4A4540',
+  carpet: '#BFB09A',
+  roomLabel: '#7A7060',
+  roomLabelDark: '#4A4840',
+  ceilingLight: '#DDD',
+  ceilingGlow: 'rgba(255,240,200,0.2)',
+  warmGlowInner: 'rgba(255,240,200,0.06)',
+  domainBadgeBg: 'rgba(0,0,0,0.5)',
+  elevator: '#2A2820',
+  elevatorInner: '#4A4840',
+  elevatorDoor: '#333',
+  lobbyFloor: '#2A4A5A',
+  lobbyAccent: '#5A2020',
+  reception: '#5A4A30',
+
+  /* ── Furniture ── */
+  desk: '#A0845C',
+  deskDark: '#7A6440',
+  deskOff: '#5A4A30',      /* unlit desk fallback */
+  deskTopOff: '#3A3020',   /* unlit desk surface */
+  monitor: '#2A2A2A',
+  monitorOff: '#1A1A1A',
+  screen: '#4488CC',
+  screenGlow: '#5599DD',
+  screenOff: '#1A1A2A',
+  screenAlt: '#88BBEE',     /* breakroom screen */
+  screenAltOff: '#2A3A4A',
+  chair: '#555',
+  chairDark: '#2A2A2A',
+  chairOff: '#222',
+  whiteboard: '#F0F0F0',
+  whiteboardDark: '#3A3A3A',
+  sofa: '#6A5A4A',
+  sofaOff: '#2A2420',
+  bookshelf: '#B89860',
+  phone: '#333',
+  phoneBtn: '#666',
+  phoneBtnOff: '#2A2A2A',
+  phoneGlow: '#44DD44',
+  trophy: '#B8963A',
+  trophyLabel: '#FFF',
+  boardSticky: ['#C25050','#5080C0','#50A050'],   /* whiteboard sticky notes */
+  boardStickyOff: ['#3A2020','#202A3A','#203020'],
+  nameplate: '#B89860',
+  nameplateOff: '#4A3820',
+  medal: '#FFD93D',
+  certificate: '#DDD',
+
+  /* ── Plants ── */
+  plant: '#5A8A3A',
+  plantDark: '#2A4A1A',
+  plantDarker: '#1A3A0A',
+  pot: '#8B6C42',
+  potOff: '#3A2A1A',
+
+  /* ── Character Palettes ── */
+  skin: ['#FFDCB0','#F5D0A0','#E8C090','#D4A86C','#C49060'],
+  hair: ['#2A1A0A','#4A3020','#6A4530','#8A6A40','#3A2A2A','#1A1A2A','#AA8050'],
+  pants: ['#3A3A5A','#2A2A4A','#4A4A5A','#3A3A3A','#2A3A4A'],
+  shoe: '#2A2A2A',
+  eyes: '#333',
+  mouth: '#AA8070',
+  tie: '#C03030',
+  labCoat: '#F0F0F0',
+  glasses: '#555',
+  laptop: '#444',
+  laptopBase: '#555',
+
+  /* ── UI Elements (Canvas-drawn) ── */
+  progressBg: '#333',
+  progressLow: '#FF6B6B',   /* <30% */
+  progressMid: '#FFD93D',   /* 30-70% */
+  progressHigh: '#6BCB77',  /* >70% */
+  progressText: '#FFF',
+  nameShadow: 'rgba(0,0,0,0.6)',
+  nameText: '#FFF',
+  statusLabel: 'rgba(255,255,200,0.7)',
+  workDot: 'rgba(255,255,255,0.85)',
+  workDotShadow: 'rgba(0,0,0,0.2)',
+  dust: 'rgba(180,170,150,0.3)',
+
+  /* ── Speech Bubble ── */
+  bubbleBg: 'rgba(30,34,42,0.92)',
+  bubbleBorder: 'rgba(255,255,255,0.1)',
+  bubbleText: '#EEE',
+  bubbleArrow: 'rgba(30,34,42,0.92)',
+  bubbleArrowBorder: 'rgba(255,255,255,0.1)',
+
+  /* ── HUD / Scene ── */
+  hudBg: 'rgba(0,0,0,0.55)',
+  hudText: '#E0E0E0',
+  hudShadow: 'rgba(0,0,0,0.5)',
+  sceneLabel: '#FFF',
+  sceneShadow: 'rgba(0,0,0,0.5)',
+  lightFade: 'rgba(0,0,0,',  /* alpha appended dynamically */
+
+  /* ── Confetti ── */
+  confetti: ['#e94560','#2ecc71','#f39c12','#4A90D9','#9B59B6','#FF6B6B','#FFD93D','#6BCB77','#FF9FF3','#54A0FF'],
+
+  /* ── Clock (analog in reception) ── */
+  clockFace: '#888',
+  clockRing: '#333',
+  clockHand: '#333',
+};
+
+/* ═══════════════════════════════════════════════════
+   §2  OFFICE MAP — Rooms with lighting support
+   ═══════════════════════════════════════════════════ */
+const ROOMS = {
+  ceo_office:     { x:10,  y:10,  w:200, h:160, type:'executive',  label:'CEO Office',     doorSide:'bottom' },
+  leader_office:  { x:220, y:10,  w:160, h:160, type:'leader',     label:'Leader Office',  doorSide:'bottom' },
+  mr_a:           { x:390, y:10,  w:140, h:160, type:'meeting',    label:'Meeting A',      doorSide:'bottom' },
+  mr_b:           { x:540, y:10,  w:140, h:160, type:'meeting',    label:'Meeting B',      doorSide:'bottom' },
+  mr_c:           { x:690, y:10,  w:140, h:160, type:'meeting',    label:'Meeting C',      doorSide:'bottom' },
+  boardroom:      { x:10,  y:220, w:215, h:170, type:'boardroom',  label:'Boardroom',      doorSide:'top' },
+  mr_d:           { x:235, y:220, w:140, h:170, type:'meeting',    label:'Meeting D',      doorSide:'top' },
+  mr_e:           { x:385, y:220, w:140, h:170, type:'meeting',    label:'Meeting E',      doorSide:'top' },
+  research_lab:   { x:535, y:220, w:295, h:170, type:'lab',        label:'Research Lab',   doorSide:'top' },
+  lobby:          { x:10,  y:395, w:580, h:135, type:'lobby',      label:'Lobby',          doorSide:'top' },
+  reception:      { x:600, y:395, w:230, h:135, type:'reception',  label:'Reception',      doorSide:'top' },
+};
+
+/* Break area (non-room decoration) */
+const BREAK_AREA = { x:840, y:10, w:110, h:160 };
+
+/* Compute door positions & center points */
+for (const [id, r] of Object.entries(ROOMS)) {
+  r.id = id;
+  r.cx = r.x + r.w / 2;
+  r.cy = r.y + r.h / 2;
+  if (r.doorSide === 'bottom') { r.doorX = r.cx; r.doorY = r.y + r.h; }
+  else { r.doorX = r.cx; r.doorY = r.y; }
+  r.slots = [];
+  r.slotIdx = 0;
+  r.lit = (id === 'ceo_office');  /* CEO office always lit initially */
+}
+
+/* Generate character slots for each room type */
+function genSlots(r) {
+  const S = [];
+  if (r.type === 'executive') {
+    S.push({ x: r.x+65,  y: r.y+r.h/2+10, sitting:true });
+    S.push({ x: r.x+140, y: r.y+55 });
+    S.push({ x: r.x+140, y: r.y+r.h-45 });
+    S.push({ x: r.x+170, y: r.y+r.h/2 });
+  } else if (r.type === 'leader') {
+    S.push({ x: r.x+50,  y: r.y+r.h/2+5, sitting:true });
+    S.push({ x: r.x+110, y: r.y+50 });
+    S.push({ x: r.x+110, y: r.y+r.h-40 });
+  } else if (r.type === 'meeting') {
+    const cx = r.cx, cy = r.cy;
+    S.push({ x:cx-30, y:cy-18, sitting:true }, { x:cx+30, y:cy-18, sitting:true });
+    S.push({ x:cx-30, y:cy+22, sitting:true }, { x:cx+30, y:cy+22, sitting:true });
+    S.push({ x:cx,    y:cy-28, sitting:true }, { x:cx,    y:cy+32, sitting:true });
+  } else if (r.type === 'boardroom') {
+    for (let i = 0; i < 4; i++) S.push({ x: r.x+35+i*50, y: r.cy-18, sitting:true });
+    for (let i = 0; i < 4; i++) S.push({ x: r.x+35+i*50, y: r.cy+22, sitting:true });
+  } else if (r.type === 'lab') {
+    for (let i = 0; i < 4; i++) S.push({ x: r.x+45+i*65, y: r.y+50, sitting:true });
+    for (let i = 0; i < 4; i++) S.push({ x: r.x+45+i*65, y: r.y+110, sitting:true });
+  } else if (r.type === 'lobby') {
+    for (let i = 0; i < 8; i++) S.push({ x: r.x+40+i*68, y: r.cy+8 });
+    for (let i = 0; i < 6; i++) S.push({ x: r.x+60+i*90, y: r.cy-22 });
+  } else if (r.type === 'reception') {
+    S.push({ x: r.x+60, y: r.cy-8 });
+    S.push({ x: r.x+130, y: r.cy+8 });
+    S.push({ x: r.x+190, y: r.cy });
+  }
+  r.slots = S;
+}
+for (const r of Object.values(ROOMS)) genSlots(r);
+
+/* ── Pathfinding ── */
+function buildPath(fromX, fromY, fromRoom, toRoomId) {
+  const to = ROOMS[toRoomId];
+  if (!to) return [{ x: fromX, y: fromY }];
+  const from = fromRoom ? ROOMS[fromRoom] : null;
+  const pts = [];
+
+  const isTopRow = (rm) => rm && rm.doorSide === 'bottom';
+  const isBotRow = (rm) => rm && rm.doorSide === 'top' && rm.y < 390;
+  const isLobbyRow = (rm) => rm && rm.y >= 390;
+
+  if (from && from.id === to.id) {
+    pts.push(nextSlot(to));
+    return pts;
+  }
+
+  /* Step 1: exit current room to corridor */
+  if (from) {
+    pts.push({ x: from.doorX, y: from.doorY });
+    if (isTopRow(from)) pts.push({ x: from.doorX, y: CORR_MID });
+    else if (isBotRow(from)) pts.push({ x: from.doorX, y: CORR_MID });
+    else if (isLobbyRow(from)) {
+      pts.push({ x: VERT_X, y: LOBBY_ENTRY_Y });
+      pts.push({ x: VERT_X, y: CORR_MID });
+    }
+  } else {
+    /* Entering from outside (e.g., workers from corridor edge) */
+    pts.push({ x: fromX, y: CORR_MID });
+  }
+
+  /* Step 2: walk along corridor to target door X */
+  if (isLobbyRow(to)) {
+    pts.push({ x: VERT_X, y: CORR_MID });
+    pts.push({ x: VERT_X, y: LOBBY_ENTRY_Y });
+    pts.push({ x: to.doorX, y: to.doorY });
+  } else {
+    pts.push({ x: to.doorX, y: CORR_MID });
+    pts.push({ x: to.doorX, y: to.doorY });
+  }
+
+  /* Step 3: walk to slot */
+  pts.push(nextSlot(to));
+  return pts;
+}
+
+function nextSlot(room) {
+  if (room.slots.length === 0) return { x: room.cx, y: room.cy };
+  const s = room.slots[room.slotIdx % room.slots.length];
+  room.slotIdx++;
+  return { x: s.x, y: s.y, sitting: s.sitting };
+}
+
+/* ═══════════════════════════════════════════════════
+   §3  CHARACTER — with phone_call state
+   ═══════════════════════════════════════════════════ */
+class Char {
+  constructor(id, name, color, role) {
+    this.id = id;
+    this.name = name;
+    this.role = role || 'worker';
+    this.shirt = color || '#888';
+    const h = hashStr(id);
+    this.skinIdx = h % C.skin.length;
+    this.hairIdx = (h >> 4) % C.hair.length;
+    this.pantsIdx = (h >> 8) % C.pants.length;
+    this.x = 0; this.y = 0;
+    this.visible = false;
+    this.state = 'idle'; // idle, walking, sitting, typing, thinking, presenting, waiting, on_phone
+    this.path = [];
+    this.currentRoom = null;
+    this.progress = -1;
+    this.bubble = '';
+    this.bubbleExp = 0;
+    this.frame = 0;
+    this.destSlot = null;
+    this.facingRight = false;
+    this._phoneTimer = 0;      /* frames remaining for phone animation */
+    this._pendingPath = null;   /* path to walk after phone call ends */
+    this._pendingAction = null; /* action to apply after movement completes */
+    this._pendingBubble = null; /* bubble text for pending action */
+    this._destRoom = null;      /* room to set on arrival */
+    this._workLabel = '';       /* current work description for auto-cycling */
+  }
+  /* Start autonomous work animation — cycles bubbles independently of backend */
+  startWork(label) {
+    this._workLabel = label || '';
+  }
+  stopWork() {
+    this._workLabel = '';
+  }
+  update() {
+    this.frame++;
+    if (this.bubbleExp && Date.now() > this.bubbleExp) { this.bubble = ''; this.bubbleExp = 0; }
+    /* Auto-cycle work bubble when label is set and no active bubble.
+       Per-character offset creates organic rhythm — characters don't all refresh at the same time. */
+    if (this._workLabel && !this.bubble && this.path.length === 0 && this.state !== 'on_phone' && this.state !== 'walking') {
+      const personalOffset = hashStr(this.id) % 90; /* 0-89 frame offset per character */
+      if ((this.frame + personalOffset) % 180 === 0) {
+        this.setBubble(this._workLabel, 2500 + (hashStr(this.id) % 1500)); /* 2.5-4s varied duration */
+      }
+    }
+
+    /* Phone call animation: wait, then walk */
+    if (this.state === 'on_phone') {
+      this._phoneTimer--;
+      if (this._phoneTimer <= 0) {
+        if (this._pendingPath) {
+          this.path = this._pendingPath;
+          this._pendingPath = null;
+        }
+        this.state = 'walking';
+      }
+      return;
+    }
+
+    if (this.path.length > 0) {
+      /* Leave source room once we start walking (corridor = null) */
+      if (this.state !== 'walking') this.currentRoom = null;
+      this.state = 'walking';
+      const t = this.path[0];
+      const dx = t.x - this.x, dy = t.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dx > 1) this.facingRight = true;
+      else if (dx < -1) this.facingRight = false;
+      if (dist < WALK_SPEED + 0.5) {
+        this.x = t.x; this.y = t.y;
+        const wp = this.path.shift();
+        if (this.path.length === 0) {
+          this.state = (wp && wp.sitting) ? 'sitting' : 'idle';
+          this.destSlot = wp;
+          /* Mark arrival in destination room */
+          if (this._destRoom) { this.currentRoom = this._destRoom; this._destRoom = null; }
+          /* Apply queued action from movement period */
+          if (this._pendingAction) {
+            this.applyAction(this._pendingAction, this._pendingBubble);
+            this._pendingAction = null;
+            this._pendingBubble = null;
+          }
+        }
+      } else {
+        this.x += (dx / dist) * WALK_SPEED;
+        this.y += (dy / dist) * WALK_SPEED;
+      }
+    }
+  }
+  moveTo(roomId) {
+    /* Preserve current work state so it resumes after arrival */
+    if (this._workLabel && !this._pendingAction) {
+      const reverseMap = {sitting:'reading', typing:'writing', thinking:'reviewing', presenting:'presenting', waiting:'waiting'};
+      this._pendingAction = reverseMap[this.state] || this.state;
+      this._pendingBubble = this._workLabel;
+    }
+    const pts = buildPath(this.x, this.y, this.currentRoom, roomId);
+    this.path = pts;
+    this._destRoom = roomId;
+    this.stopWork(); /* Stop work animation while moving */
+  }
+  phoneAndMoveTo(roomId) {
+    /* Show phone animation for ~60 frames (1 sec), then walk to target */
+    const pts = buildPath(this.x, this.y, this.currentRoom, roomId);
+    this.state = 'on_phone';
+    this._phoneTimer = 60;
+    this._pendingPath = pts;
+    this._destRoom = roomId;
+    this.setBubble('전화 수신 중...', 1500);
+  }
+  applyAction(action, detail) {
+    if (this.path.length > 0 || this.state === 'on_phone') {
+      /* Queue for when movement/phone finishes */
+      this._pendingAction = action;
+      this._pendingBubble = detail || null;
+      return;
+    }
+    const map = { reading:'sitting', writing:'typing', reviewing:'thinking', researching:'thinking', waiting:'waiting', presenting:'presenting', alert:'idle' };
+    this.state = map[action] || action || 'idle';
+    if (detail) {
+      this.setBubble(detail, 4000);
+      this.startWork(detail); /* Keep cycling this label independently */
+    }
+    if (action === 'idle' || action === 'alert') this.stopWork();
+  }
+  setAction(action) { this.applyAction(action, null); }
+  setBubble(text, dur) { this.bubble = (text||'').substring(0, 30); this.bubbleExp = Date.now() + (dur||3000); }
+}
+
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return Math.abs(h); }
+
+/* ═══════════════════════════════════════════════════
+   §4  GAME ENGINE — Canvas rendering with lighting
+   ═══════════════════════════════════════════════════ */
+class Engine {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.chars = new Map();
+    this.litRooms = new Set(['ceo_office']); /* rooms with lights on */
+    /* Smooth light transition tracking */
+    this._lightLevels = new Map();
+    this._lightTargets = new Map();
+    for (const id of Object.keys(ROOMS)) {
+      const init = id === 'ceo_office' ? 1 : 0;
+      this._lightLevels.set(id, init);
+      this._lightTargets.set(id, init);
+    }
+    this._sceneFade = 0; /* scene transition flash intensity */
+    this._confetti = []; /* celebration particles */
+    this._roomDomains = new Map(); /* room_id → domain label (for meeting room badges) */
+    this._sceneLabel = ''; /* scene transition label overlay */
+    this._sceneLabelAlpha = 0;
+    this._hudLabel = ''; /* persistent bottom-left step label */
+    this._errorFade = 0; /* red error flash */
+    this.frame = 0;
+    this.running = true;
+    this._lastTime = 0;
+    this._loop = this._loop.bind(this);
+    /* Responsive canvas: fit container while preserving aspect ratio + HiDPI */
+    this._resizeCanvas();
+    this._resizeObserver = new ResizeObserver(() => this._resizeCanvas());
+    this._resizeObserver.observe(canvas.parentElement);
+    requestAnimationFrame(this._loop);
+  }
+
+  _resizeCanvas() {
+    const parent = this.cv.parentElement;
+    const containerW = parent.clientWidth;
+    const containerH = parent.clientHeight;
+    const scale = Math.min(containerW / W, containerH / H);
+    const dpr = window.devicePixelRatio || 1;
+    const displayW = Math.floor(W * scale);
+    const displayH = Math.floor(H * scale);
+    this.cv.style.width = displayW + 'px';
+    this.cv.style.height = displayH + 'px';
+    this.cv.width = W * dpr;
+    this.cv.height = H * dpr;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  setLitRooms(rooms) {
+    this.litRooms.clear();
+    for (const r of rooms) this.litRooms.add(r);
+    /* Update smooth transition targets */
+    for (const id of Object.keys(ROOMS)) {
+      this._lightTargets.set(id, this.litRooms.has(id) ? 1 : 0);
+    }
+  }
+
+  _updateLights() {
+    const LERP = 0.08; /* ~12-15 frames (0.2-0.25s) for full transition */
+    for (const [id, level] of this._lightLevels) {
+      const target = this._lightTargets.get(id) || 0;
+      if (Math.abs(level - target) > 0.01) {
+        this._lightLevels.set(id, level + (target - level) * LERP);
+      } else if (level !== target) {
+        this._lightLevels.set(id, target);
+      }
+    }
+  }
+
+  triggerSceneFlash() { this._sceneFade = 1; }
+
+  setSceneLabel(text) {
+    this._sceneLabel = text || '';
+    this._sceneLabelAlpha = 1.3; /* >1 for extended full visibility before fade */
+  }
+
+  triggerConfetti() {
+    const colors = C.confetti;
+    for (let i = 0; i < 80; i++) {
+      this._confetti.push({
+        x: Math.random() * W,
+        y: -10 - Math.random() * 40,
+        vx: (Math.random() - 0.5) * 3,
+        vy: Math.random() * 2 + 1.5,
+        size: Math.random() * 4 + 2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        rotSpeed: (Math.random() - 0.5) * 8,
+        life: 180 + Math.floor(Math.random() * 120), /* 3-5 seconds */
+      });
+    }
+  }
+
+  _loop(ts) {
+    if (!this.running) return;
+    requestAnimationFrame(this._loop);
+    if (ts - this._lastTime < FPS_INTERVAL) return;
+    this._lastTime = ts;
+    this.frame++;
+    this._updateLights();
+    for (const c of this.chars.values()) c.update();
+    this._render();
+  }
+
+  _render() {
+    const ctx = this.ctx;
+    /* 1. Dark background */
+    ctx.fillStyle = C.outerFloor;
+    ctx.fillRect(0, 0, W, H);
+
+    /* 2. Corridors (always dim-lit) */
+    this._drawCorridors(ctx);
+
+    /* 3. Rooms — drawn with smooth lighting transitions */
+    for (const r of Object.values(ROOMS)) {
+      const level = this._lightLevels.get(r.id) || 0;
+      const drawLit = level > 0.05;
+      this._drawRoom(ctx, r, drawLit);
+      this._drawFurniture(ctx, r, drawLit);
+      /* Smooth light fade overlay during transitions */
+      if (drawLit && level < 0.95) {
+        ctx.fillStyle = `rgba(13,13,20,${((1 - level) * 0.85).toFixed(3)})`;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+      }
+    }
+
+    /* 4. Break area decoration */
+    this._drawBreakArea(ctx);
+
+    /* 5. Characters (sorted by Y for depth) */
+    const sorted = [...this.chars.values()].filter(c => c.visible).sort((a, b) => a.y - b.y);
+    for (const c of sorted) {
+      try { this._drawChar(ctx, c); }
+      catch (e) { console.warn('_drawChar error for', c.id, e); ctx.restore(); ctx.globalAlpha = 1; }
+    }
+
+    /* 6. Scene transition flash (golden border glow) */
+    if (this._sceneFade > 0) {
+      ctx.strokeStyle = `rgba(255,220,100,${(this._sceneFade * 0.35).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(2, 2, W - 4, H - 4);
+      this._sceneFade = Math.max(0, this._sceneFade - 0.03);
+    }
+
+    /* 7. Confetti particles */
+    if (this._confetti.length > 0) {
+      for (let i = this._confetti.length - 1; i >= 0; i--) {
+        const p = this._confetti[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.02; /* gentle gravity */
+        p.rotation += p.rotSpeed;
+        p.life--;
+        if (p.life <= 0 || p.y > H + 20) { this._confetti.splice(i, 1); continue; }
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation * Math.PI / 180);
+        ctx.globalAlpha = Math.min(1, p.life / 30);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        ctx.restore();
+      }
+    }
+
+    /* 8. Scene transition label overlay (centered, fading) */
+    if (this._sceneLabelAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, this._sceneLabelAlpha);
+      ctx.font = 'bold 14px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(this._sceneLabel).width;
+      ctx.fillStyle = C.hudBg;
+      this._roundRect(ctx, W / 2 - tw / 2 - 18, H / 2 - 16, tw + 36, 32, 8);
+      ctx.fill();
+      ctx.fillStyle = C.medal;
+      ctx.fillText(this._sceneLabel, W / 2, H / 2);
+      ctx.restore();
+      this._sceneLabelAlpha -= 0.018; /* fade over ~70 frames (~1.2s) */
+    }
+
+    /* 9. Persistent HUD — current step label (bottom-left) */
+    if (this._hudLabel) {
+      ctx.save();
+      ctx.font = '10px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      const tw = ctx.measureText(this._hudLabel).width;
+      ctx.fillStyle = C.hudShadow;
+      this._roundRect(ctx, 6, H - 22, tw + 14, 18, 4); ctx.fill();
+      ctx.fillStyle = C.hudText;
+      ctx.fillText(this._hudLabel, 13, H - 8);
+      ctx.restore();
+    }
+
+    /* 10. Building watermark (bottom-right, very subtle) */
+    ctx.save();
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillText('ENTERPRISE HQ', W - 10, H - 6);
+    ctx.restore();
+
+    /* 11. Error flash (red border glow) */
+    if (this._errorFade > 0) {
+      ctx.strokeStyle = `rgba(231,76,60,${(this._errorFade * 0.5).toFixed(3)})`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(2, 2, W - 4, H - 4);
+      this._errorFade = Math.max(0, this._errorFade - 0.04);
+    }
+  }
+
+  /* ── Corridors (subtle warm lighting) ── */
+  _drawCorridors(ctx) {
+    /* Horizontal main corridor */
+    ctx.fillStyle = C.corridorDark;
+    ctx.fillRect(10, CORR_Y1, W - 20, CORR_Y2 - CORR_Y1);
+    /* Subtle tile pattern */
+    ctx.fillStyle = C.corridorTile;
+    for (let x = 10; x < W - 10; x += 40) {
+      if (((x / 40) & 1) === 0) ctx.fillRect(x, CORR_Y1, 40, CORR_Y2 - CORR_Y1);
+    }
+    /* Vertical connector */
+    ctx.fillStyle = C.corridorDark;
+    ctx.fillRect(215, CORR_Y2, 40, LOBBY_ENTRY_Y - CORR_Y2);
+    ctx.fillStyle = C.corridorTile;
+    for (let y = CORR_Y2; y < LOBBY_ENTRY_Y; y += 40) {
+      if (((y / 40) & 1) === 0) ctx.fillRect(215, y, 40, 40);
+    }
+    /* Corridor border */
+    ctx.strokeStyle = C.corridorBorder;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(10, CORR_Y1, W - 20, CORR_Y2 - CORR_Y1);
+    ctx.strokeRect(215, CORR_Y2, 40, LOBBY_ENTRY_Y - CORR_Y2);
+    /* Small ceiling lights along corridor — subtle pulse for life */
+    const pulse = 0.12 + Math.sin(this.frame * 0.015) * 0.03;
+    for (let lx = 60; lx < W - 30; lx += 120) {
+      ctx.fillStyle = `rgba(255,220,160,${pulse.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(lx, CORR_MID, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = C.corridorLight;
+      ctx.fillRect(lx - 3, CORR_Y1, 6, 3);
+    }
+    /* Ambient dust motes in corridor for visual depth */
+    ctx.fillStyle = C.corridorDust;
+    for (let i = 0; i < 5; i++) {
+      const seed = (this.frame * 0.3 + i * 173) % (W - 40);
+      const mx = 30 + seed;
+      const my = CORR_Y1 + 5 + Math.sin(this.frame * 0.008 + i * 2.5) * 12;
+      ctx.beginPath(); ctx.arc(mx, my, 1.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  /* ── Room ── */
+  _drawRoom(ctx, r, lit) {
+    /* Floor */
+    if (lit) {
+      ctx.fillStyle = r.type === 'lobby' ? C.lobbyFloorLit : r.type === 'executive' ? C.execFloor : r.type === 'leader' ? C.leaderFloor : C.roomFloor;
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      /* Floor tile pattern */
+      ctx.fillStyle = r.type === 'executive' ? C.execTile : r.type === 'leader' ? C.leaderTile : C.roomTile;
+      for (let tx = r.x; tx < r.x + r.w; tx += 32) {
+        for (let ty = r.y; ty < r.y + r.h; ty += 32) {
+          if (((tx / 32 + ty / 32) & 1) === 0) ctx.fillRect(tx, ty, 32, 32);
+        }
+      }
+    } else {
+      ctx.fillStyle = C.roomFloorDark;
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      /* Subtle dark tile pattern */
+      ctx.fillStyle = C.roomFloorDarkTile;
+      for (let tx = r.x; tx < r.x + r.w; tx += 32) {
+        for (let ty = r.y; ty < r.y + r.h; ty += 32) {
+          if (((tx / 32 + ty / 32) & 1) === 0) ctx.fillRect(tx, ty, 32, 32);
+        }
+      }
+    }
+    /* Walls */
+    ctx.strokeStyle = lit ? C.wall : C.wallDark;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    /* Wall inner highlight (only when lit) */
+    if (lit) {
+      ctx.strokeStyle = C.wallInner;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(r.x + 1, r.y + r.h); ctx.lineTo(r.x + 1, r.y + 1); ctx.lineTo(r.x + r.w, r.y + 1);
+      ctx.stroke();
+    }
+    /* Door */
+    ctx.fillStyle = lit ? C.door : C.doorDark;
+    const dw = 28;
+    if (r.doorSide === 'bottom') {
+      ctx.fillRect(r.doorX - dw/2, r.y + r.h - 2, dw, 5);
+    } else {
+      ctx.fillRect(r.doorX - dw/2, r.y - 2, dw, 5);
+    }
+    /* Label */
+    ctx.fillStyle = lit ? C.roomLabel : C.roomLabelDark;
+    ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(r.label, r.cx, r.y + 14);
+
+    /* Domain badge on meeting rooms */
+    const domainTag = this._roomDomains.get(r.id);
+    if (lit && domainTag && (r.type === 'meeting' || r.type === 'boardroom')) {
+      ctx.fillStyle = C.domainBadgeBg;
+      const tagW = ctx.measureText(domainTag).width + 8;
+      this._roundRect(ctx, r.cx - tagW / 2, r.y + r.h - 16, tagW, 12, 3); ctx.fill();
+      ctx.fillStyle = C.medal;
+      ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(domainTag, r.cx, r.y + r.h - 7);
+    }
+
+    /* Warm glow effect when lit */
+    if (lit) {
+      const grad = ctx.createRadialGradient(r.cx, r.cy, 10, r.cx, r.cy, Math.max(r.w, r.h) * 0.7);
+      grad.addColorStop(0, 'rgba(255,240,200,0.06)');
+      grad.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      /* Ceiling light fixture */
+      ctx.fillStyle = C.ceilingLight;
+      ctx.fillRect(r.cx - 8, r.y + 2, 16, 3);
+      ctx.fillStyle = C.ceilingGlow;
+      ctx.beginPath(); ctx.arc(r.cx, r.y + 5, 12, 0, Math.PI); ctx.fill();
+    }
+  }
+
+  /* ── Furniture ── */
+  _drawFurniture(ctx, r, lit) {
+    switch (r.type) {
+      case 'executive': this._furnExec(ctx, r, lit); break;
+      case 'leader': this._furnLeader(ctx, r, lit); break;
+      case 'meeting': this._furnMeeting(ctx, r, lit); break;
+      case 'boardroom': this._furnBoard(ctx, r, lit); break;
+      case 'lab': this._furnLab(ctx, r, lit); break;
+      case 'lobby': this._furnLobby(ctx, r, lit); break;
+      case 'reception': this._furnReception(ctx, r, lit); break;
+    }
+  }
+
+  _furnExec(ctx, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    const mn = lit ? C.monitor : C.monitorOff;
+    /* Subtle screen flicker when lit (ambient life) */
+    const flick = lit && (this.frame % 120 < 4);
+    const sc = lit ? (flick ? C.screenGlow : C.screen) : C.screenOff;
+    ctx.fillStyle = dk;
+    ctx.fillRect(r.x + 28, r.cy - 16, 70, 32);
+    ctx.fillStyle = lit ? C.deskDark : C.deskTopOff;
+    ctx.fillRect(r.x + 28, r.cy + 14, 70, 4);
+    ctx.fillStyle = mn;
+    ctx.fillRect(r.x + 42, r.cy - 26, 22, 14);
+    ctx.fillStyle = sc;
+    ctx.fillRect(r.x + 44, r.cy - 24, 18, 10);
+    ctx.fillStyle = mn;
+    ctx.fillRect(r.x + 51, r.cy - 12, 8, 4);
+    ctx.fillStyle = lit ? C.laptop : C.chairOff;
+    ctx.fillRect(r.x + 40, r.cy - 2, 28, 7);
+    /* Bookshelf */
+    ctx.fillStyle = dk;
+    ctx.fillRect(r.x + 5, r.y + 22, 12, 50);
+    if (lit) {
+      ctx.fillStyle = C.boardSticky[0]; ctx.fillRect(r.x + 7, r.y + 26, 8, 8);
+      ctx.fillStyle = C.boardSticky[1]; ctx.fillRect(r.x + 7, r.y + 36, 8, 8);
+      ctx.fillStyle = C.boardSticky[2]; ctx.fillRect(r.x + 7, r.y + 46, 8, 10);
+    } else {
+      ctx.fillStyle = C.boardStickyOff[0]; ctx.fillRect(r.x + 7, r.y + 26, 8, 8);
+      ctx.fillStyle = C.boardStickyOff[1]; ctx.fillRect(r.x + 7, r.y + 36, 8, 8);
+      ctx.fillStyle = C.boardStickyOff[2]; ctx.fillRect(r.x + 7, r.y + 46, 8, 10);
+    }
+    this._drawPlant(ctx, r.x + r.w - 25, r.y + 30, lit);
+    /* Nameplate */
+    ctx.fillStyle = lit ? C.nameplate : C.nameplateOff;
+    ctx.fillRect(r.x + 48, r.cy + 4, 14, 3);
+    /* Visitor chairs */
+    ctx.fillStyle = lit ? C.chair : C.chairDark;
+    ctx.beginPath(); ctx.arc(r.x + 140, r.y + 58, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(r.x + 140, r.y + r.h - 48, 6, 0, Math.PI * 2); ctx.fill();
+    /* CEO nameplate on wall */
+    if (lit) {
+      ctx.fillStyle = C.trophy;
+      ctx.fillRect(r.x + r.w/2 - 18, r.y + 3, 36, 8);
+      ctx.fillStyle = C.trophyLabel;
+      ctx.font = 'bold 6px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('CEO', r.cx, r.y + 10);
+    }
+  }
+
+  _furnLeader(ctx, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    const mn = lit ? C.monitor : C.monitorOff;
+    const sc = lit ? C.screen : C.screenOff;
+    /* Desk */
+    ctx.fillStyle = dk;
+    ctx.fillRect(r.x + 20, r.cy - 12, 55, 28);
+    ctx.fillStyle = lit ? C.deskDark : C.deskTopOff;
+    ctx.fillRect(r.x + 20, r.cy + 14, 55, 3);
+    /* Monitor */
+    ctx.fillStyle = mn;
+    ctx.fillRect(r.x + 32, r.cy - 22, 18, 12);
+    ctx.fillStyle = sc;
+    ctx.fillRect(r.x + 34, r.cy - 20, 14, 8);
+    /* Keyboard */
+    ctx.fillStyle = lit ? C.laptop : C.chairOff;
+    ctx.fillRect(r.x + 30, r.cy, 24, 6);
+    /* Phone on desk */
+    ctx.fillStyle = lit ? C.phone : C.monitorOff;
+    ctx.fillRect(r.x + 62, r.cy - 6, 8, 12);
+    ctx.fillStyle = lit ? C.phoneBtn : C.phoneBtnOff;
+    ctx.fillRect(r.x + 60, r.cy - 8, 12, 4);
+    /* Visitor chair */
+    ctx.fillStyle = lit ? C.chair : C.chairDark;
+    ctx.beginPath(); ctx.arc(r.x + 110, r.cy, 5, 0, Math.PI * 2); ctx.fill();
+    this._drawPlant(ctx, r.x + r.w - 18, r.y + 25, lit);
+    /* Domain label (shown when lit, updated dynamically) */
+    if (lit) {
+      ctx.fillStyle = C.trophy;
+      ctx.fillRect(r.x + r.w/2 - 22, r.y + 3, 44, 8);
+      ctx.fillStyle = C.trophyLabel;
+      ctx.font = 'bold 6px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('LEADER', r.cx, r.y + 10);
+    }
+  }
+
+  _furnMeeting(ctx, r, lit) {
+    const cx = r.cx, cy = r.cy;
+    const dk = lit ? C.desk : C.deskOff;
+    ctx.fillStyle = dk;
+    this._roundRect(ctx, cx - 30, cy - 12, 60, 24, 4); ctx.fill();
+    ctx.fillStyle = lit ? C.deskDark : C.deskTopOff;
+    this._roundRect(ctx, cx - 28, cy + 10, 56, 3, 2); ctx.fill();
+    ctx.fillStyle = lit ? C.chair : C.chairDark;
+    const cps = [[-35, -7], [-35, 7], [35, -7], [35, 7], [0, -20], [0, 20]];
+    for (const [dx, dy] of cps) { ctx.beginPath(); ctx.arc(cx + dx, cy + dy, 5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = lit ? C.whiteboard : C.whiteboardDark;
+    ctx.fillRect(cx - 26, r.y + 4, 52, 4);
+  }
+
+  _furnBoard(ctx, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    ctx.fillStyle = dk;
+    this._roundRect(ctx, r.x + 25, r.cy - 10, r.w - 50, 20, 5); ctx.fill();
+    ctx.fillStyle = lit ? C.chair : C.chairDark;
+    for (let i = 0; i < 5; i++) {
+      const x = r.x + 40 + i * 30;
+      ctx.beginPath(); ctx.arc(x, r.cy - 18, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x, r.cy + 18, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = lit ? C.whiteboard : C.whiteboardDark;
+    ctx.fillRect(r.cx - 35, r.y + 4, 70, 5);
+    this._drawPlant(ctx, r.x + r.w - 18, r.y + r.h - 28, lit);
+  }
+
+  _furnLab(ctx, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    const mn = lit ? C.monitor : C.monitorOff;
+    /* Staggered screen flicker per workstation */
+    const sc = lit ? ((this.frame + 60) % 120 < 4 ? C.screenGlow : C.screen) : C.screenOff;
+    for (let i = 0; i < 4; i++) {
+      const dx = r.x + 30 + i * 65;
+      ctx.fillStyle = dk; ctx.fillRect(dx, r.y + 38, 38, 18);
+      ctx.fillStyle = mn; ctx.fillRect(dx + 10, r.y + 28, 16, 12);
+      ctx.fillStyle = sc; ctx.fillRect(dx + 12, r.y + 30, 12, 8);
+      ctx.fillStyle = dk; ctx.fillRect(dx, r.y + 98, 38, 18);
+      ctx.fillStyle = mn; ctx.fillRect(dx + 10, r.y + 88, 16, 12);
+      ctx.fillStyle = lit ? C.screenGlow : C.screenOff; ctx.fillRect(dx + 12, r.y + 90, 12, 8);
+    }
+    this._drawPlant(ctx, r.x + r.w - 18, r.y + 25, lit);
+  }
+
+  _furnLobby(ctx, r, lit) {
+    const sofa = lit ? C.sofa : C.sofaOff;
+    ctx.fillStyle = sofa;
+    this._roundRect(ctx, r.x + 30, r.cy - 32, 80, 16, 4); ctx.fill();
+    this._roundRect(ctx, r.x + 30, r.cy + 18, 80, 16, 4); ctx.fill();
+    ctx.fillStyle = lit ? C.desk : C.deskTopOff;
+    this._roundRect(ctx, r.x + 48, r.cy - 6, 40, 14, 3); ctx.fill();
+    this._drawPlant(ctx, r.x + 20, r.y + 18, lit);
+    this._drawPlant(ctx, r.x + r.w - 20, r.y + 18, lit);
+    /* Water cooler */
+    ctx.fillStyle = lit ? C.certificate : C.laptop;
+    ctx.fillRect(r.x + r.w - 48, r.y + 18, 12, 18);
+    ctx.fillStyle = lit ? C.screenAlt : C.screenAltOff;
+    ctx.fillRect(r.x + r.w - 46, r.y + 20, 8, 8);
+  }
+
+  _furnReception(ctx, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    ctx.fillStyle = dk;
+    this._roundRect(ctx, r.x + 25, r.cy - 4, 80, 18, 4); ctx.fill();
+    ctx.fillStyle = lit ? C.monitor : C.monitorOff;
+    ctx.fillRect(r.x + 48, r.cy - 16, 18, 13);
+    ctx.fillStyle = lit ? C.screen : C.screenOff;
+    ctx.fillRect(r.x + 50, r.cy - 14, 14, 9);
+    ctx.fillStyle = lit ? C.chair : C.chairDark;
+    ctx.beginPath(); ctx.arc(r.x + 140, r.cy + 10, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(r.x + 165, r.cy + 10, 5, 0, Math.PI * 2); ctx.fill();
+    this._drawPlant(ctx, r.x + r.w - 20, r.y + 22, lit);
+    if (lit) {
+      ctx.fillStyle = C.nameplate; ctx.fillRect(r.x + 120, r.y + 5, 45, 6);
+      ctx.fillStyle = C.glasses; ctx.font = '6px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('RECEPTION', r.x + 142, r.y + 10);
+    }
+  }
+
+  /* ── Break area ── */
+  _drawBreakArea(ctx) {
+    const ba = BREAK_AREA;
+    ctx.fillStyle = C.elevator;
+    ctx.fillRect(ba.x, ba.y, ba.w, ba.h);
+    ctx.strokeStyle = C.wallDark;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ba.x, ba.y, ba.w, ba.h);
+    ctx.fillStyle = C.elevatorInner;
+    ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Break', ba.x + ba.w/2, ba.y + 14);
+    /* Vending machine */
+    ctx.fillStyle = C.elevatorDoor;
+    ctx.fillRect(ba.x + 10, ba.y + 45, 28, 40);
+    ctx.fillStyle = C.lobbyFloor;
+    ctx.fillRect(ba.x + 14, ba.y + 49, 20, 18);
+    ctx.fillStyle = C.lobbyAccent;
+    ctx.fillRect(ba.x + 14, ba.y + 71, 20, 8);
+    /* Small table */
+    ctx.fillStyle = C.deskOff;
+    ctx.fillRect(ba.x + 55, ba.y + 65, 28, 18);
+    this._drawPlant(ctx, ba.x + 85, ba.y + 45, false);
+    /* Clock on corridor wall */
+    ctx.fillStyle = C.clockFace;
+    ctx.beginPath(); ctx.arc(ba.x + 30, CORR_Y1 + 8, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.clockRing; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(ba.x + 30, CORR_Y1 + 8, 7, 0, Math.PI * 2); ctx.stroke();
+    const now = new Date();
+    const hA = (now.getHours() % 12 + now.getMinutes() / 60) * Math.PI / 6 - Math.PI / 2;
+    const mA = now.getMinutes() * Math.PI / 30 - Math.PI / 2;
+    ctx.strokeStyle = C.clockHand;
+    ctx.beginPath(); ctx.moveTo(ba.x+30, CORR_Y1+8); ctx.lineTo(ba.x+30+Math.cos(hA)*3.5, CORR_Y1+8+Math.sin(hA)*3.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ba.x+30, CORR_Y1+8); ctx.lineTo(ba.x+30+Math.cos(mA)*5, CORR_Y1+8+Math.sin(mA)*5); ctx.stroke();
+  }
+
+  /* ── Character Drawing ── */
+  _drawChar(ctx, ch) {
+    const x = ch.x, y = ch.y;
+    const S = 1.8;
+    const f = ch.frame;
+
+    /* Dim characters in unlit rooms (uses smooth light level) */
+    const inRoom = ch.currentRoom && ROOMS[ch.currentRoom];
+    const roomLight = inRoom ? (this._lightLevels.get(ch.currentRoom) || 0) : 1;
+    const inDarkRoom = inRoom && roomLight < 0.15;
+
+    const skin = C.skin[ch.skinIdx];
+    const hair = C.hair[ch.hairIdx];
+    const pants = C.pants[ch.pantsIdx];
+
+    ctx.save();
+    /* Gradual dimming based on room light level (smooth transition) */
+    if (inRoom) {
+      const charAlpha = 0.35 + roomLight * 0.65; /* 0.35 at dark → 1.0 at full light */
+      if (charAlpha < 0.99) ctx.globalAlpha = charAlpha;
+    }
+    /* Idle breathing: subtle vertical oscillation for stationary characters */
+    if (ch.state !== 'walking' && ch.state !== 'on_phone') {
+      ctx.translate(0, Math.sin(f * 0.02 + hashStr(ch.id) * 0.1) * 0.6);
+    }
+    if (ch.facingRight) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.translate(-x, 0); }
+
+    /* Shadow */
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.ellipse(x, y + 2, 8 * S, 3 * S, 0, 0, Math.PI * 2); ctx.fill();
+
+    const isSitting = ch.state === 'sitting' || ch.state === 'typing';
+    const isOnPhone = ch.state === 'on_phone';
+    const legBase = y - 12 * S;
+
+    if (!isSitting) {
+      /* ── Standing/Walking legs ── */
+      ctx.fillStyle = pants;
+      if (ch.state === 'walking') {
+        const swing = Math.sin(f * 0.2) * 4 * S;
+        ctx.fillRect(x - 3 * S, legBase, 2.5 * S, 9 * S + swing);
+        ctx.fillRect(x + 0.5 * S, legBase, 2.5 * S, 9 * S - swing);
+        ctx.fillStyle = C.shoe;
+        ctx.fillRect(x - 3.5 * S, legBase + 9 * S + swing, 3.5 * S, 2 * S);
+        ctx.fillRect(x - 0.5 * S, legBase + 9 * S - swing, 3.5 * S, 2 * S);
+      } else {
+        ctx.fillRect(x - 3 * S, legBase, 2.5 * S, 9 * S);
+        ctx.fillRect(x + 0.5 * S, legBase, 2.5 * S, 9 * S);
+        ctx.fillStyle = C.shoe;
+        ctx.fillRect(x - 3.5 * S, legBase + 9 * S, 3.5 * S, 2 * S);
+        ctx.fillRect(x - 0.5 * S, legBase + 9 * S, 3.5 * S, 2 * S);
+      }
+    }
+
+    /* ── Torso ── */
+    const bodyY = isSitting ? y - 8 * S : y - 22 * S;
+    const bodyH = isSitting ? 10 * S : 11 * S;
+    ctx.fillStyle = ch.shirt;
+    this._roundRect(ctx, x - 5.5 * S, bodyY, 11 * S, bodyH, 2 * S); ctx.fill();
+    ctx.fillStyle = skin;
+    ctx.fillRect(x - 1.5 * S, bodyY, 3 * S, 2 * S);
+
+    /* CEO tie */
+    if (ch.role === 'ceo') {
+      ctx.fillStyle = C.tie;
+      ctx.beginPath();
+      ctx.moveTo(x, bodyY + 2 * S);
+      ctx.lineTo(x - 1.5 * S, bodyY + 7 * S);
+      ctx.lineTo(x, bodyY + 9 * S);
+      ctx.lineTo(x + 1.5 * S, bodyY + 7 * S);
+      ctx.closePath(); ctx.fill();
+    }
+    /* Specialist lab coat collar (white lines on shirt edges) */
+    if (ch.role === 'specialist') {
+      ctx.strokeStyle = C.labCoat;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - 4 * S, bodyY + 1 * S); ctx.lineTo(x - 1 * S, bodyY + 4 * S);
+      ctx.moveTo(x + 4 * S, bodyY + 1 * S); ctx.lineTo(x + 1 * S, bodyY + 4 * S);
+      ctx.stroke();
+    }
+
+    /* ── Arms ── */
+    ctx.fillStyle = skin;
+    if (isOnPhone) {
+      /* One arm at side, other holding phone to ear */
+      ctx.fillRect(x - 7 * S, bodyY + 1 * S, 2.5 * S, 7 * S);
+      /* Phone arm raised to ear */
+      ctx.fillRect(x + 4.5 * S, bodyY - 4 * S, 2.5 * S, 7 * S);
+      /* Phone handset */
+      ctx.fillStyle = C.phone;
+      ctx.fillRect(x + 5 * S, bodyY - 6 * S, 2 * S, 5 * S);
+      /* Phone glow (pulsing) */
+      if (f % 30 < 15) {
+        ctx.fillStyle = C.phoneGlow;
+        ctx.beginPath(); ctx.arc(x + 6 * S, bodyY - 7 * S, 2 * S, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (ch.state === 'typing') {
+      const armWiggle = Math.sin(f * 0.3) * 1 * S;
+      ctx.fillRect(x - 7 * S, bodyY + 4 * S + armWiggle, 2.5 * S, 6 * S);
+      ctx.fillRect(x + 4.5 * S, bodyY + 4 * S - armWiggle, 2.5 * S, 6 * S);
+    } else if (ch.state === 'thinking') {
+      ctx.fillRect(x - 7 * S, bodyY + 1 * S, 2.5 * S, 7 * S);
+      ctx.fillRect(x + 4.5 * S, bodyY - 2 * S, 2.5 * S, 6 * S);
+    } else if (ch.state === 'presenting') {
+      ctx.fillRect(x - 7 * S, bodyY - 3 * S, 2.5 * S, 8 * S);
+      ctx.fillRect(x + 4.5 * S, bodyY + 2 * S, 2.5 * S, 7 * S);
+    } else {
+      ctx.fillRect(x - 7 * S, bodyY + 1 * S, 2.5 * S, 8 * S);
+      ctx.fillRect(x + 4.5 * S, bodyY + 1 * S, 2.5 * S, 8 * S);
+    }
+
+    /* ── Head ── */
+    const headY = bodyY - 5 * S;
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(x, headY, 5 * S, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hair;
+    ctx.beginPath(); ctx.arc(x, headY - 1.2 * S, 5.2 * S, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x - 5.2 * S, headY - 2 * S, 1.8 * S, 4 * S);
+    ctx.fillRect(x + 3.4 * S, headY - 2 * S, 1.8 * S, 4 * S);
+    ctx.fillStyle = C.eyes;
+    ctx.fillRect(x - 2.5 * S, headY - 0.5 * S, 1.5 * S, 1.5 * S);
+    ctx.fillRect(x + 1 * S, headY - 0.5 * S, 1.5 * S, 1.5 * S);
+    ctx.fillStyle = C.mouth;
+    ctx.fillRect(x - 1 * S, headY + 2 * S, 2 * S, 0.8 * S);
+
+    /* Specialist glasses (drawn after headY is defined) */
+    if (ch.role === 'specialist') {
+      ctx.strokeStyle = C.glasses;
+      ctx.lineWidth = 1;
+      const gy = headY - 0.3 * S;
+      ctx.strokeRect(x - 3.5 * S, gy - 1.5 * S, 3 * S, 2.5 * S);
+      ctx.strokeRect(x + 0.5 * S, gy - 1.5 * S, 3 * S, 2.5 * S);
+      ctx.beginPath(); ctx.moveTo(x - 0.5 * S, gy); ctx.lineTo(x + 0.5 * S, gy); ctx.stroke();
+    }
+
+    ctx.restore();
+
+    /* ── Walking dust particles ── */
+    if (ch.state === 'walking' && f % 8 < 3) {
+      ctx.fillStyle = C.dust;
+      const dustOff = (f % 3) * 3;
+      ctx.beginPath(); ctx.arc(x + 3 + dustOff, y + 3, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x - 2 - dustOff, y + 4, 1, 0, Math.PI * 2); ctx.fill();
+    }
+
+    /* ── Laptop (for sitting/typing characters) ── */
+    if (isSitting || ch.state === 'typing') {
+      ctx.fillStyle = C.laptop;
+      ctx.fillRect(x - 8, y - 2 * S, 16, 10);
+      ctx.fillStyle = ch.state === 'typing' ? (f % 20 < 10 ? C.screen : C.screenGlow) : C.screen;
+      ctx.fillRect(x - 6, y - 2 * S + 1, 12, 6);
+      ctx.fillStyle = C.laptopBase;
+      ctx.fillRect(x - 7, y - 2 * S + 8, 14, 3);
+    }
+
+    /* ── Name label with emoji badge ── */
+    const nameText = ch.emoji ? `${ch.emoji} ${ch.name}` : ch.name;
+    ctx.fillStyle = C.nameShadow;
+    ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(nameText, x, y + 8 * S);
+    ctx.fillStyle = C.nameText;
+    ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+    ctx.fillText(nameText, x - 0.5, y + 8 * S - 0.5);
+    /* Tiny status line for working characters */
+    if (ch._workLabel && ch.state !== 'walking') {
+      ctx.font = '7px sans-serif';
+      ctx.fillStyle = C.statusLabel;
+      const statusText = ch._workLabel.length > 14 ? ch._workLabel.substring(0, 13) + '..' : ch._workLabel;
+      ctx.fillText(statusText, x, y + 8 * S + 10);
+    }
+
+    /* ── Progress bar ── */
+    if (ch.progress >= 0) {
+      const barW = 30, barH = 5;
+      const barX = x - barW / 2;
+      const barY = (isSitting ? bodyY : headY) - 10 * S;
+      ctx.fillStyle = C.progressBg;
+      this._roundRect(ctx, barX, barY, barW, barH, 2); ctx.fill();
+      const p = Math.max(0, Math.min(1, ch.progress));
+      ctx.fillStyle = p < 0.3 ? C.progressLow : p < 0.7 ? C.progressMid : C.progressHigh;
+      if (p > 0) { this._roundRect(ctx, barX, barY, barW * p, barH, 2); ctx.fill(); }
+      ctx.fillStyle = C.progressText;
+      ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(Math.round(p * 100) + '%', x, barY - 2);
+    }
+
+    /* ── Working indicator (bouncing dots when active but no bubble) ── */
+    const WORKING_STATES = new Set(['thinking', 'typing', 'sitting', 'waiting', 'presenting']);
+    if (WORKING_STATES.has(ch.state) && !ch.bubble && ch.progress < 0) {
+      const dotBaseY = (isSitting ? bodyY : headY) - 13 * S;
+      const phase = ch.frame * 0.08;
+      ctx.strokeStyle = C.workDotShadow;
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i < 3; i++) {
+        const bounce = Math.sin(phase + i * 1.2) * 2.5;
+        ctx.fillStyle = C.workDot;
+        ctx.beginPath();
+        ctx.arc(x - 5 + i * 5, dotBaseY + bounce, 2, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+      }
+    }
+
+    /* ── Speech bubble ── */
+    if (ch.bubble) {
+      ctx.font = '9px sans-serif';
+      const tw = ctx.measureText(ch.bubble).width;
+      const bw = Math.min(tw + 12, 120);
+      const bh = 18;
+      const bx = x - bw / 2;
+      const by = (isSitting ? bodyY : headY) - 14 * S;
+      ctx.fillStyle = C.bubbleBg; ctx.strokeStyle = C.bubbleBorder; ctx.lineWidth = 1;
+      this._roundRect(ctx, bx, by, bw, bh, 5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = C.bubbleArrow;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, by + bh); ctx.lineTo(x + 4, by + bh); ctx.lineTo(x, by + bh + 6);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = C.bubbleArrowBorder;
+      ctx.beginPath(); ctx.moveTo(x - 4, by + bh); ctx.lineTo(x, by + bh + 6); ctx.lineTo(x + 4, by + bh); ctx.stroke();
+      ctx.fillStyle = C.bubbleText; ctx.textAlign = 'center';
+      ctx.fillText(ch.bubble.length > 18 ? ch.bubble.substring(0, 17) + '..' : ch.bubble, x, by + 13);
+    }
+
+  }
+
+  /* ── Helpers ── */
+  _drawPlant(ctx, x, y, lit) {
+    ctx.fillStyle = lit ? C.pot : C.potOff;
+    ctx.fillRect(x - 5, y + 8, 10, 8);
+    ctx.fillStyle = lit ? C.plant : C.plantDark;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = lit ? C.plantDark : C.plantDarker;
+    ctx.beginPath(); ctx.arc(x - 3, y + 2, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §5  SIM RENDERER (WebSocket + State)
+   ═══════════════════════════════════════════════════ */
+class SimRenderer {
+  constructor(engine) {
+    this.engine = engine;
+    this.ws = null;
+    this.logEl = document.getElementById('log');
+    this.startTime = null;
+    this.timerIv = null;
+    /* Event queuing while interrupt modal is open */
+    this._modalOpen = false;
+    this._eventQueue = [];
+    /* Choreography timers for multi-step frontend-driven animations */
+    this._choreographyTimers = [];
+    /* Track current interrupt type for context-aware reactions */
+    this._currentInterruptType = '';
+  }
+
+  connect() {
+    this._reconnectAttempts = 0;
+    this._maxReconnect = 5;
+    this._openConnection();
+  }
+
+  _openConnection() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+    this.ws.onopen = () => {
+      document.getElementById('cdot').classList.add('on');
+      this._reconnectAttempts = 0;
+      this._hideReconnectBanner();
+    };
+    this.ws.onmessage = (e) => { try { this._handle(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+    this.ws.onclose = () => {
+      document.getElementById('cdot').classList.remove('on');
+      this.addLog('Server disconnected', 'error');
+      this._tryReconnect();
+    };
+    this.ws.onerror = () => {}; /* onclose will fire after onerror */
+  }
+
+  _tryReconnect() {
+    if (this._reconnectAttempts >= this._maxReconnect) {
+      this._showReconnectBanner(true);
+      return;
+    }
+    this._reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 16000);
+    this._showReconnectBanner(false);
+    setTimeout(() => this._openConnection(), delay);
+  }
+
+  _showReconnectBanner(isFinal) {
+    let banner = document.getElementById('reconnect-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'reconnect-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:110;padding:8px 16px;text-align:center;font-size:0.82em;font-weight:600;transition:opacity .3s;';
+      document.body.appendChild(banner);
+    }
+    if (isFinal) {
+      banner.style.background = '#e74c3c';
+      banner.style.color = '#fff';
+      banner.textContent = '서버 연결 실패 — ';
+      const rb = document.createElement('a');
+      rb.textContent = '새로고침';
+      rb.href = '#';
+      rb.style.cssText = 'color:#fff;text-decoration:underline;cursor:pointer;';
+      rb.addEventListener('click', (e) => { e.preventDefault(); location.reload(); });
+      banner.appendChild(rb);
+    } else {
+      banner.style.background = 'var(--yellow)';
+      banner.style.color = '#000';
+      banner.textContent = '재연결 중... (' + this._reconnectAttempts + '/' + this._maxReconnect + ')';
+    }
+    banner.style.opacity = '1';
+  }
+
+  _hideReconnectBanner() {
+    const banner = document.getElementById('reconnect-banner');
+    if (banner) { banner.style.opacity = '0'; setTimeout(() => banner.remove(), 300); }
+  }
+  send(d) { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(d)); }
+
+  _handle(ev) {
+    /* While interrupt modal is open, queue visual events so the user
+       doesn't miss animations happening behind the modal.
+       Non-visual events (log, progress, errors) still process immediately. */
+    const IMMEDIATE = new Set(['init', 'progress', 'message', 'interrupt', 'complete', 'error']);
+    if (this._modalOpen && !IMMEDIATE.has(ev.type)) {
+      this._eventQueue.push(ev);
+      return;
+    }
+    const m = {
+      init: d => this._onInit(d),
+      scene_change: d => this._onScene(d),
+      char_move: d => this._onMove(d),
+      char_action: d => this._onAction(d),
+      char_spawn: d => this._onSpawn(d),
+      hierarchy: d => this._onHierarchy(d),
+      progress: d => this._onProgress(d),
+      message: d => this._onMessage(d),
+      interrupt: d => this._onInterrupt(d),
+      lights: d => this._onLights(d),
+      complete: d => this._onComplete(d),
+      error: d => this._onError(d),
+    };
+    const fn = m[ev.type];
+    if (fn) fn(ev.data);
+  }
+
+  _onInit(d) {
+    for (const c of (d.characters || [])) this._spawnChar(c, c.home_room);
+  }
+
+  _spawnChar(cd, spawnAt) {
+    if (this.engine.chars.has(cd.id)) return;
+    const ch = new Char(cd.id, cd.name, cd.color, cd.role);
+    ch.emoji = cd.emoji || '';
+
+    if (spawnAt === 'corridor_entrance') {
+      /* Workers enter from off-screen right, staggered along X to avoid overlap */
+      const existingWorkers = [...this.engine.chars.values()].filter(c => c.role === 'worker').length;
+      ch.x = CORRIDOR_ENTRANCE_X + existingWorkers * 25;
+      ch.y = CORR_MID + (existingWorkers % 3 - 1) * 8; /* slight Y spread */
+      ch.currentRoom = null;
+      ch.facingRight = false;
+    } else {
+      const home = spawnAt || cd.home_room || 'lobby';
+      const room = ROOMS[home] || ROOMS.lobby;
+      const slot = nextSlot(room);
+      ch.x = slot.x; ch.y = slot.y;
+      ch.currentRoom = room.id;
+    }
+    ch.visible = true;
+    this.engine.chars.set(cd.id, ch);
+  }
+
+  _onSpawn(d) {
+    if (d.character) this._spawnChar(d.character, d.spawn_at);
+  }
+
+  _onScene(d) {
+    document.getElementById('step-lbl').textContent = `Step ${d.step}: ${d.label}`;
+    this.addLog(`[Step ${d.step}] ${d.label}`, 'system');
+    this.engine.triggerSceneFlash();
+    this.engine.setSceneLabel(d.label);
+    this.engine._hudLabel = `Step ${d.step}: ${d.label}`;
+    /* Cancel pending choreography from previous scene */
+    for (const t of this._choreographyTimers) clearTimeout(t);
+    this._choreographyTimers = [];
+    /* Clear stale states — new scene actions will set correct states */
+    for (const ch of this.engine.chars.values()) {
+      if (ch.state === 'waiting') {
+        ch.state = 'idle';
+        ch.stopWork();
+        ch.bubble = '';
+        ch.bubbleExp = 0;
+      }
+    }
+    /* On worker_execution entry: clear leftover plan-review states from ceo_confirm_plan.
+       Leaders may still show "presenting plan" — they should be idle before walking to meeting rooms. */
+    if (d.node === 'worker_execution') {
+      for (const ch of this.engine.chars.values()) {
+        if (ch.role === 'leader' && ch.state === 'presenting') {
+          ch.state = 'idle';
+          ch.stopWork();
+          ch.bubble = '';
+          ch.bubbleExp = 0;
+        }
+      }
+      /* CEO "GO!" announcement — brief visual bridge before workers move out */
+      const ceo = this.engine.chars.get('ceo');
+      if (ceo && ceo.path.length === 0) {
+        ceo.setBubble('계획 승인! GO!', 4000);
+        ceo.state = 'presenting';
+        /* After 3.5s, transition CEO to monitoring mode */
+        this._choreographyTimers.push(setTimeout(() => {
+          if (ceo.state === 'presenting') {
+            ceo.applyAction('reviewing', '워커 진행 상황 모니터링 중...');
+          }
+        }, 3500));
+      }
+    }
+    /* Deep research transition safety net: when entering await_research_answers
+       (after user answered interrupt) or deep_research, FORCE research lab state.
+       This is the CRITICAL fix — without it, stale lights/actions from previous
+       scene scripts can override the frontend's submitInterrupt changes. */
+    const DEEP_RESEARCH_ACTIVE = new Set(['await_research_answers', 'deep_research', 'deep_research_revision']);
+    if (DEEP_RESEARCH_ACTIVE.has(d.node)) {
+      this.engine.setLitRooms(['research_lab']);
+      const ceo = this.engine.chars.get('ceo');
+      if (ceo) {
+        ceo.state = 'idle';
+        ceo.stopWork();
+        ceo.bubble = '';
+        ceo.bubbleExp = 0;
+      }
+      const dr = this.engine.chars.get('deep_researcher');
+      if (dr && dr.visible) {
+        dr.applyAction('researching', '딥리서치 진행 중...');
+        dr.startWork('딥리서치 진행 중...');
+      }
+    }
+    /* On post-worker phases: stop all work animations cleanly */
+    if (d.node === 'user_review_results' || d.node === 'result_review' || d.node === 'ceo_final_report') {
+      for (const ch of this.engine.chars.values()) {
+        if (ch.role === 'worker' || ch.role === 'leader') {
+          ch.stopWork();
+        }
+      }
+    }
+    /* Clear stale progress bars when leaving worker execution phases */
+    const WORKER_NODES = new Set(['worker_execution', 'worker_result_revision']);
+    if (!WORKER_NODES.has(d.node)) {
+      for (const ch of this.engine.chars.values()) {
+        if (ch.progress >= 0) ch.progress = -1;
+      }
+    }
+    /* Node-specific choreography sequences */
+    this._runChoreography(d.node);
+  }
+
+  _runChoreography(node) {
+    if (node === 'deep_research' || node === 'await_research_answers') {
+      /* Deep research: researcher stays in lab, cycle through activities for visual feedback.
+         Research can take 3-10+ minutes — cycling keeps the UI alive.
+         Also triggered on await_research_answers because astream only yields this node
+         AFTER user answered (interrupt resume) — deep_research hasn't emitted yet. */
+      const activities = [
+        ['researching', '자료 수집 중...'],
+        ['writing', '분석 내용 정리 중...'],
+        ['thinking', '핵심 인사이트 도출 중...'],
+        ['researching', '추가 데이터 검증 중...'],
+        ['writing', '리포트 초안 작성 중...'],
+      ];
+      let idx = 0;
+      const cycle = () => {
+        const dr = this.engine.chars.get('deep_researcher');
+        if (!dr || !dr.visible) return;
+        const [action, label] = activities[idx % activities.length];
+        dr.applyAction(action, label);
+        dr.startWork(label);
+        idx++;
+        this._choreographyTimers.push(setTimeout(cycle, 20000));
+      };
+      this._choreographyTimers.push(setTimeout(cycle, 20000));
+    }
+
+    if (node === 'worker_execution' || node === 'worker_result_revision') {
+      /* Worker execution: cycle through activities for all visible workers.
+         Workers are in meeting rooms doing actual work — show varied activity states.
+         Each worker gets a slightly offset cycle so they don't all change at once. */
+      const workerActivities = [
+        ['writing', '작업 수행 중...'],
+        ['thinking', '분석 검토 중...'],
+        ['writing', '결과물 작성 중...'],
+        ['thinking', '품질 확인 중...'],
+      ];
+      const leaderActivities = [
+        ['reviewing', '진행 상황 확인 중...'],
+        ['thinking', '피드백 검토 중...'],
+        ['reviewing', '워커 결과 리뷰 중...'],
+      ];
+      /* CEO monitoring cycle — independent from worker/leader cycle */
+      const ceoActivities = [
+        ['reviewing', '전체 진행 상황 모니터링 중...'],
+        ['thinking', '결과 품질 검토 중...'],
+        ['reviewing', '워커 보고서 확인 중...'],
+        ['writing', '진행 메모 작성 중...'],
+      ];
+      let ceoIdx = 0;
+      const ceoCycle = () => {
+        const ceo = this.engine.chars.get('ceo');
+        if (ceo && ceo.visible && ceo.path.length === 0) {
+          const [act, lbl] = ceoActivities[ceoIdx % ceoActivities.length];
+          ceo.applyAction(act, lbl);
+          ceoIdx++;
+        }
+        this._choreographyTimers.push(setTimeout(ceoCycle, 18000));
+      };
+      this._choreographyTimers.push(setTimeout(ceoCycle, 8000));
+      let wIdx = 0;
+      const workerCycle = () => {
+        let offset = 0;
+        for (const ch of this.engine.chars.values()) {
+          if (!ch.visible || ch.progress >= 0) continue; /* Skip chars with active progress bars */
+          if (ch.role === 'worker' && ch.path.length === 0) {
+            /* Per-character stagger: each worker changes activity at a slightly different time */
+            const charDelay = (hashStr(ch.id) % 4) * 1500; /* 0-4.5s offset */
+            const capturedIdx = wIdx, capturedOff = offset;
+            setTimeout(() => {
+              if (ch.visible && ch.path.length === 0) {
+                const [act, lbl] = workerActivities[(capturedIdx + capturedOff) % workerActivities.length];
+                ch.applyAction(act, lbl);
+              }
+            }, charDelay);
+            offset++;
+          } else if (ch.role === 'leader' && ch.path.length === 0) {
+            const charDelay = (hashStr(ch.id) % 3) * 2000;
+            const capturedIdx = wIdx, capturedOff = offset;
+            setTimeout(() => {
+              if (ch.visible && ch.path.length === 0) {
+                const [act, lbl] = leaderActivities[(capturedIdx + capturedOff) % leaderActivities.length];
+                ch.applyAction(act, lbl);
+              }
+            }, charDelay);
+            offset++;
+          }
+        }
+        wIdx++;
+        this._choreographyTimers.push(setTimeout(workerCycle, 15000));
+      };
+      /* Start after workers have had time to walk into meeting rooms */
+      this._choreographyTimers.push(setTimeout(workerCycle, 12000));
+    }
+
+    if (node === 'leader_task_decomposition' || node === 'ceo_confirm_plan') {
+      /* Planning meeting: CEO and leaders discuss in CEO office.
+         Cycle through planning activities to keep the scene alive during long planning phases. */
+      const planActivities = [
+        ['thinking', '계획 논의 중...'],
+        ['presenting', '작업 범위 설명 중...'],
+        ['reviewing', '리소스 검토 중...'],
+        ['thinking', '일정 조율 중...'],
+      ];
+      const ceoPlanActivities = [
+        ['reviewing', '계획 검토 중...'],
+        ['thinking', '전략 구상 중...'],
+        ['reviewing', '리더 보고 검토 중...'],
+      ];
+      let pIdx = 0;
+      const planCycle = () => {
+        /* Leaders cycle through planning activities */
+        let off = 0;
+        for (const ch of this.engine.chars.values()) {
+          if (!ch.visible || ch.role !== 'leader' || ch.path.length > 0) continue;
+          const charDelay = (hashStr(ch.id) % 3) * 1500;
+          const capturedIdx = pIdx, capturedOff = off;
+          setTimeout(() => {
+            if (ch.visible && ch.path.length === 0) {
+              const [act, lbl] = planActivities[(capturedIdx + capturedOff) % planActivities.length];
+              ch.applyAction(act, lbl);
+            }
+          }, charDelay);
+          off++;
+        }
+        /* CEO also cycles */
+        const ceo = this.engine.chars.get('ceo');
+        if (ceo && ceo.visible && ceo.path.length === 0) {
+          const [act, lbl] = ceoPlanActivities[pIdx % ceoPlanActivities.length];
+          ceo.applyAction(act, lbl);
+        }
+        pIdx++;
+        this._choreographyTimers.push(setTimeout(planCycle, 20000));
+      };
+      /* Start after leaders have walked to CEO office (~5s for phone + walk) */
+      this._choreographyTimers.push(setTimeout(planCycle, 8000));
+    }
+
+    if (node === 'ceo_final_report') {
+      /* Final report: everyone gathers in boardroom. Cycle through presentation activities. */
+      const reportActivities = [
+        ['presenting', '최종 보고 중...'],
+        ['reviewing', '결과물 검토 중...'],
+        ['presenting', '성과 설명 중...'],
+      ];
+      let rIdx = 0;
+      const reportCycle = () => {
+        let off = 0;
+        for (const ch of this.engine.chars.values()) {
+          if (!ch.visible || ch.path.length > 0) continue;
+          if (ch.role === 'ceo') {
+            ch.applyAction('presenting', '최종 보고서 작성 중...');
+          } else if (ch.role === 'leader' || ch.role === 'worker') {
+            const [act, lbl] = reportActivities[(rIdx + off) % reportActivities.length];
+            ch.applyAction(act, lbl);
+            off++;
+          }
+        }
+        rIdx++;
+        this._choreographyTimers.push(setTimeout(reportCycle, 18000));
+      };
+      /* Start after characters walk to boardroom (~8s) */
+      this._choreographyTimers.push(setTimeout(reportCycle, 10000));
+    }
+  }
+
+  _onLights(d) {
+    this.engine.setLitRooms(d.rooms || []);
+  }
+
+  _onMove(d) {
+    const PHONE_STAGGER = 1300; /* phone anim(1s) + walk-out margin(0.3s) */
+    const WALK_STAGGER = 600;  /* workers just walk in, shorter gap is fine */
+    const ms = d.action === 'phone_then_walk' ? PHONE_STAGGER : WALK_STAGGER;
+    const delay = (d.delay_index || 0) * ms;
+    if (delay > 0) {
+      setTimeout(() => this._execMove(d), delay);
+    } else {
+      this._execMove(d);
+    }
+  }
+
+  _execMove(d) {
+    const ch = this.engine.chars.get(d.character);
+    if (!ch) return;
+    if (d.action === 'phone_then_walk') {
+      ch.phoneAndMoveTo(d.to_room);
+    } else if (d.action === 'enter_from_corridor') {
+      if (!ch.currentRoom && ch.x >= W) {
+        ch.x = CORRIDOR_ENTRANCE_X;
+        ch.y = CORR_MID;
+      }
+      ch.moveTo(d.to_room);
+    } else {
+      ch.moveTo(d.to_room);
+    }
+    /* Track domain assignments to meeting rooms */
+    if (d.character && d.character.endsWith('_leader') && d.to_room) {
+      const room = ROOMS[d.to_room];
+      if (room && (room.type === 'meeting' || room.type === 'boardroom')) {
+        const domain = d.character.replace('_leader', '');
+        this.engine._roomDomains.set(d.to_room, domain.charAt(0).toUpperCase() + domain.slice(1));
+      }
+    }
+  }
+
+  _onAction(d) {
+    const ch = this.engine.chars.get(d.character);
+    if (!ch) return;
+    ch.applyAction(d.action, d.detail);
+  }
+
+  _onProgress(d) {
+    const ch = this.engine.chars.get(d.character);
+    if (!ch) return;
+    ch.progress = d.progress;
+    if (d.status === 'done') {
+      ch.progress = 1;
+      ch.stopWork();
+      ch.setBubble('\u2705 \uc644\ub8cc!', 2500); /* ✅ 완료! */
+      ch.state = 'presenting'; /* brief celebration pose */
+      setTimeout(() => {
+        if (ch.state === 'presenting') ch.state = 'idle';
+        ch.progress = -1;
+      }, 3000);
+    }
+    if (d.summary && d.progress > 0.4) ch.setBubble(d.summary, 3000);
+    /* Update org panel worker status dot */
+    const dot = document.querySelector(`.ow[data-worker="${d.character}"] .status-dot`);
+    if (dot) {
+      dot.className = 'status-dot ' + (d.status === 'done' ? 'done' : d.progress > 0 ? 'working' : 'idle');
+    }
+  }
+
+  _onHierarchy(d) {
+    const tree = document.getElementById('org');
+    while (tree.firstChild) tree.removeChild(tree.firstChild);
+    const ceo = document.createElement('div');
+    ceo.style.cssText = 'font-weight:700;color:var(--blue);margin-bottom:6px;';
+    ceo.textContent = 'CEO';
+    tree.appendChild(ceo);
+    for (const l of (d.leaders || [])) {
+      const le = document.createElement('div');
+      le.className = 'ol';
+      const dn = document.createElement('span');
+      dn.className = 'dn';
+      dn.textContent = '\u251C\u2500 ' + l.domain + ' Leader';
+      le.appendChild(dn);
+      tree.appendChild(le);
+      for (const w of (l.workers || [])) {
+        const we = document.createElement('div');
+        we.className = 'ow';
+        we.dataset.worker = w;
+        const dot = document.createElement('span');
+        dot.className = 'status-dot idle';
+        we.appendChild(dot);
+        we.appendChild(document.createTextNode('\u2502  \u251C\u2500 ' + w));
+        tree.appendChild(we);
+      }
+    }
+  }
+
+  _onMessage(d) {
+    const sm = { announcement: 'ceo', report: 'leader', chat: 'worker', system: 'system' };
+    const s = sm[d.style] || 'system';
+    const pfx = d.speaker && d.speaker !== 'system' ? `[${d.speaker}] ` : '';
+    this.addLog(pfx + d.content, s);
+    if (d.speaker && d.speaker !== 'system') {
+      const ch = this.engine.chars.get(d.speaker);
+      if (ch) {
+        ch.setBubble(d.content, 3000);
+        /* Brief presentation pose when character "speaks" */
+        if (ch.path.length === 0 && ch.state !== 'on_phone') {
+          const prev = ch.state;
+          ch.state = 'presenting';
+          setTimeout(() => { if (ch.state === 'presenting') ch.state = prev || 'idle'; }, 3000);
+        }
+      }
+    }
+  }
+
+  _onInterrupt(d) {
+    this._modalOpen = true;
+    this._currentInterruptType = d.interrupt_type || d.type || '';
+    const ov = document.getElementById('int-ov');
+    const ct = document.getElementById('int-c');
+    while (ct.firstChild) ct.removeChild(ct.firstChild);
+    /* Elapsed timer for interrupt modal */
+    const timerEl = document.createElement('div');
+    timerEl.style.cssText = 'text-align:right;font-size:0.7em;color:var(--dim);margin-bottom:6px;font-variant-numeric:tabular-nums;opacity:0.7;';
+    timerEl.textContent = '0:00';
+    ct.appendChild(timerEl);
+    const intStart = Date.now();
+    if (this._intTimerIv) clearInterval(this._intTimerIv);
+    this._intTimerIv = setInterval(() => {
+      const s = Math.floor((Date.now() - intStart) / 1000);
+      timerEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+    InterruptUI.render(d, ct, this);
+    ov.classList.remove('h');
+  }
+
+  submitInterrupt(rd) {
+    this.send({ type: 'interrupt_response', data: rd });
+    document.getElementById('int-ov').classList.add('h');
+    this._modalOpen = false;
+    if (this._intTimerIv) { clearInterval(this._intTimerIv); this._intTimerIv = null; }
+    /* Clear all 'waiting' states immediately — user has responded */
+    for (const ch of this.engine.chars.values()) {
+      if (ch.state === 'waiting' || (ch._workLabel && ch._workLabel.includes('대기'))) {
+        ch.state = 'idle';
+        ch.stopWork();
+        ch.bubble = '';
+        ch.bubbleExp = 0;
+      }
+    }
+    /* Context-aware processing feedback based on interrupt type */
+    const intType = this._currentInterruptType;
+    this._currentInterruptType = '';
+    const ceo = this.engine.chars.get('ceo');
+
+    if (intType === 'research_clarification') {
+      /* ══ Deep research mode: IMMEDIATE full transition ══
+         CEO room OFF → research lab ON → researcher starts working.
+         This must happen BEFORE _flushQueue() to beat any backend events.
+         Cancel any previous choreography first. */
+      for (const t of this._choreographyTimers) clearTimeout(t);
+      this._choreographyTimers = [];
+      /* 1. Lights: research lab only */
+      this.engine.setLitRooms(['research_lab']);
+      /* 2. CEO goes completely idle in the dark */
+      if (ceo) { ceo.state = 'idle'; ceo.stopWork(); ceo.bubble = ''; ceo.bubbleExp = 0; }
+      /* 3. Deep researcher starts working immediately */
+      const dr = this.engine.chars.get('deep_researcher');
+      if (dr && dr.visible) {
+        dr.applyAction('researching', '딥리서치 진행 중...');
+        dr.startWork('딥리서치 진행 중...');
+      }
+      /* 4. Start activity cycling for the long research period (3-10+ min).
+         The backend won't send deep_research scene_change until research completes,
+         so we must start cycling NOW. */
+      const activities = [
+        ['researching', '자료 수집 중...'],
+        ['writing', '분석 내용 정리 중...'],
+        ['thinking', '핵심 인사이트 도출 중...'],
+        ['researching', '추가 데이터 검증 중...'],
+        ['writing', '리포트 초안 작성 중...'],
+      ];
+      let rIdx = 0;
+      const researchCycle = () => {
+        const dr2 = this.engine.chars.get('deep_researcher');
+        if (!dr2 || !dr2.visible) return;
+        const [action, label] = activities[rIdx % activities.length];
+        dr2.applyAction(action, label);
+        dr2.startWork(label);
+        rIdx++;
+        this._choreographyTimers.push(setTimeout(researchCycle, 20000));
+      };
+      this._choreographyTimers.push(setTimeout(researchCycle, 15000));
+    } else {
+      /* Non-research interrupts: normal processing feedback */
+      if (ceo && ceo.path.length === 0) {
+        if (intType === 'result_review' || intType === 'research_review') {
+          ceo.applyAction('reviewing', '리뷰 결과 처리 중...');
+        } else {
+          ceo.applyAction('thinking', '답변 분석 중...');
+        }
+      }
+    }
+    this._flushQueue();
+  }
+
+  _flushQueue() {
+    const queued = this._eventQueue.splice(0);
+    for (const ev of queued) this._handle(ev);
+  }
+
+  _onComplete(d) {
+    const ov = document.getElementById('done-ov');
+    const ct = document.getElementById('done-c');
+    while (ct.firstChild) ct.removeChild(ct.firstChild);
+
+    /* Icon */
+    const icon = document.createElement('div');
+    icon.style.cssText = 'font-size:2.8em;line-height:1;margin-bottom:6px;';
+    icon.textContent = '\uD83C\uDF89';
+    ct.appendChild(icon);
+
+    /* Heading with gradient text */
+    const h = document.createElement('h2');
+    h.textContent = 'Work Complete!';
+    h.style.cssText = 'font-size:1.5em;font-weight:700;background:linear-gradient(135deg,var(--green),#58d68d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px;';
+    ct.appendChild(h);
+
+    /* Session pill */
+    if (d.session_id) {
+      const pill = document.createElement('span');
+      pill.style.cssText = 'display:inline-block;padding:3px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:20px;font-size:0.76em;color:var(--dim);font-variant-numeric:tabular-nums;letter-spacing:0.04em;';
+      pill.textContent = 'Session ' + d.session_id;
+      ct.appendChild(pill);
+    }
+
+    /* Elapsed time */
+    if (this.startTime) {
+      const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+      const m = Math.floor(elapsed / 60), s = elapsed % 60;
+      const tp = document.createElement('p');
+      tp.style.cssText = 'color:var(--green);margin-top:14px;font-size:1.05em;font-weight:500;';
+      tp.textContent = '\u23F1 ' + m + '\uBD84 ' + s + '\uCD08';
+      ct.appendChild(tp);
+    }
+
+    /* Separator */
+    const sep = document.createElement('div');
+    sep.style.cssText = 'width:64px;height:2px;background:linear-gradient(90deg,var(--red),var(--purple));margin:22px auto;border-radius:1px;';
+    ct.appendChild(sep);
+
+    /* Button group */
+    const grp = document.createElement('div');
+    grp.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+
+    /* "결과물 보기" — primary CTA (blue gradient, wide) */
+    if (d.report_path) {
+      const sid = d.report_path.split('/').pop();
+      const viewBtn = document.createElement('button');
+      viewBtn.style.cssText = 'background:linear-gradient(135deg,#3498db,#2176ae);color:#fff;padding:13px 0;font-size:0.95em;width:100%;max-width:260px;border-radius:12px;';
+      viewBtn.textContent = '\uD83D\uDCC4 \uACB0\uACFC\uBB3C \uBCF4\uAE30';
+      viewBtn.addEventListener('click', () => window.open('/reports/' + sid + '/results.html', '_blank'));
+      grp.appendChild(viewBtn);
+    }
+
+    /* "확인" — secondary (subtle) */
+    const btn = document.createElement('button');
+    btn.className = 'bs';
+    btn.style.cssText = 'padding:10px 32px;font-size:0.86em;';
+    btn.textContent = '\uD655\uC778';
+    btn.addEventListener('click', () => {
+      ov.classList.add('h');
+      this._startCelebrationChoreography();
+      this._showNewTaskButton();
+    });
+    grp.appendChild(btn);
+    ct.appendChild(grp);
+
+    ov.classList.remove('h');
+    this.stopTimer();
+    this.addLog('Complete!', 'system');
+    /* Celebrate: all rooms lit, everyone to boardroom, confetti! */
+    this.engine.setLitRooms(Object.keys(ROOMS));
+    this.engine.triggerConfetti();
+    setTimeout(() => this.engine.triggerConfetti(), 1500);
+    for (const ch of this.engine.chars.values()) { ch.stopWork(); ch.moveTo('boardroom'); ch.progress = -1; }
+  }
+
+  _startCelebrationChoreography() {
+    const msgs = ['수고했어요!', '대성공!', '축하합니다!', '완벽해요!', '최고!', '잘했어요!', '파티!', '우리가 해냈다!'];
+    const states = ['presenting', 'idle', 'thinking'];
+    const chars = [...this.engine.chars.values()];
+    if (!chars.length) return;
+
+    /* Immediate: give every character a celebration bubble */
+    for (const ch of chars) {
+      ch.state = states[Math.floor(Math.random() * states.length)];
+      ch.setBubble(msgs[Math.floor(Math.random() * msgs.length)], 3000 + Math.random() * 2000);
+    }
+
+    /* Cycling: rotate states and bubbles every 5 seconds */
+    const cycle = () => {
+      for (const ch of chars) {
+        ch.state = states[Math.floor(Math.random() * states.length)];
+        ch.setBubble(msgs[Math.floor(Math.random() * msgs.length)], 3000 + Math.random() * 2000);
+      }
+      this._choreographyTimers.push(setTimeout(cycle, 5000 + Math.random() * 3000));
+    };
+    this._choreographyTimers.push(setTimeout(cycle, 5000));
+
+    /* Periodic confetti every 30 seconds */
+    const confettiLoop = () => {
+      this.engine.triggerConfetti();
+      this._choreographyTimers.push(setTimeout(confettiLoop, 30000));
+    };
+    this._choreographyTimers.push(setTimeout(confettiLoop, 30000));
+  }
+
+  _showNewTaskButton() {
+    /* Remove existing button if any (prevent duplicates) */
+    const existing = document.getElementById('new-task-fab');
+    if (existing) existing.remove();
+
+    const fab = document.createElement('button');
+    fab.id = 'new-task-fab';
+    fab.textContent = 'New Task';
+    fab.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:90;padding:12px 24px;border:none;border-radius:12px;background:var(--red);color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:transform .3s,filter .15s,opacity .3s;transform:translateY(60px);opacity:0;';
+    /* Slide-in animation */
+    requestAnimationFrame(() => requestAnimationFrame(() => { fab.style.transform = 'translateY(0)'; fab.style.opacity = '1'; }));
+    fab.addEventListener('mouseenter', () => { fab.style.transform = 'translateY(-2px)'; fab.style.filter = 'brightness(1.15)'; });
+    fab.addEventListener('mouseleave', () => { fab.style.transform = 'translateY(0)'; fab.style.filter = ''; });
+    fab.addEventListener('click', () => location.reload());
+    document.body.appendChild(fab);
+  }
+
+  _onError(d) {
+    this.addLog('ERROR: ' + (d.message || 'Unknown'), 'error');
+    this.engine._errorFade = 1;
+    /* Toast notification */
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:56px;right:16px;z-index:110;padding:10px 18px;background:#e74c3c;color:#fff;border-radius:8px;font-size:0.82em;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.3);animation:fi .3s;max-width:320px;';
+    toast.textContent = d.message || 'Unknown error';
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .3s'; setTimeout(() => toast.remove(), 300); }, 5000);
+  }
+
+  addLog(text, style) {
+    const e = document.createElement('div');
+    e.className = 'le ' + (style || 'system');
+    const ts = document.createElement('span');
+    ts.className = 't';
+    ts.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    e.appendChild(ts);
+    const sp = document.createElement('span');
+    sp.textContent = text;
+    e.appendChild(sp);
+    this.logEl.appendChild(e);
+    this.logEl.parentElement.scrollTop = this.logEl.parentElement.scrollHeight;
+    while (this.logEl.children.length > 200) this.logEl.removeChild(this.logEl.firstChild);
+  }
+
+  startTimer() {
+    this.startTime = Date.now();
+    this.timerIv = setInterval(() => {
+      const s = Math.floor((Date.now() - this.startTime) / 1000);
+      document.getElementById('timer').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+  }
+  stopTimer() {
+    if (this.timerIv) clearInterval(this.timerIv);
+    /* Freeze the final elapsed time on display */
+    if (this.startTime) {
+      const s = Math.floor((Date.now() - this.startTime) / 1000);
+      document.getElementById('timer').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §6  INTERRUPT UI
+   ═══════════════════════════════════════════════════ */
+class InterruptUI {
+  static render(data, ct, rnd) {
+    const t = data.interrupt_type || data.type || '';
+    switch (t) {
+      case 'clarifying_questions': this._questions(data, ct, rnd); break;
+      case 'result_review': this._resultReview(data, ct, rnd); break;
+      case 'research_review': this._researchReview(data, ct, rnd); break;
+      case 'research_clarification': this._researchQ(data, ct, rnd); break;
+      default: {
+        const p = document.createElement('p'); p.textContent = 'Interrupt: ' + t; ct.appendChild(p);
+        const b = document.createElement('button'); b.className = 'bp'; b.textContent = 'OK';
+        b.addEventListener('click', () => rnd.submitInterrupt('ok')); ct.appendChild(b);
+      }
+    }
+  }
+
+  static _questions(data, ct, rnd) {
+    const h = document.createElement('h2'); h.textContent = '\uD83D\uDCAC Leader Questions'; h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    const sub = document.createElement('p'); sub.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 14px;'; sub.textContent = 'Please answer the questions from each domain leader.'; ct.appendChild(sub);
+    const areas = {};
+    for (const [domain, qs] of Object.entries(data.questions || {})) {
+      const sec = document.createElement('div'); sec.className = 'ds';
+      const h3 = document.createElement('h3'); h3.textContent = domain + ' Leader'; h3.style.color = 'var(--green)'; sec.appendChild(h3);
+      areas[domain] = [];
+      (qs || []).forEach((q, i) => {
+        const d = document.createElement('div'); d.className = 'qi';
+        const p = document.createElement('p'); p.textContent = (i + 1) + '. ' + q; d.appendChild(p);
+        const ta = document.createElement('textarea'); ta.placeholder = 'Answer...'; ta.rows = 2; d.appendChild(ta);
+        sec.appendChild(d); areas[domain].push(ta);
+      });
+      ct.appendChild(sec);
+    }
+    const btn = document.createElement('button'); btn.className = 'bp'; btn.textContent = 'Submit';
+    btn.addEventListener('click', () => {
+      const ans = {};
+      for (const [dm, tas] of Object.entries(areas)) ans[dm] = tas.map(ta => ta.value || 'Proceed with best judgment.');
+      rnd.submitInterrupt(ans);
+    });
+    ct.appendChild(btn);
+  }
+
+  static _resultReview(data, ct, rnd) {
+    const h = document.createElement('h2'); h.textContent = '\uD83D\uDCCB Result Review'; h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    const sub = document.createElement('p'); sub.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 10px;'; sub.textContent = 'Review the results and choose an action.'; ct.appendChild(sub);
+    if (data.summary) { const pre = document.createElement('pre'); pre.className = 'rs'; pre.textContent = data.summary; ct.appendChild(pre); }
+    const acts = document.createElement('div'); acts.className = 'ra';
+    const cb = document.createElement('button'); cb.className = 'bc'; cb.textContent = '\u2705 Confirm';
+    cb.addEventListener('click', () => rnd.submitInterrupt({ action: 'confirm' })); acts.appendChild(cb);
+    const rb = document.createElement('button'); rb.className = 'bs'; rb.textContent = '\u270F\uFE0F Revise'; acts.appendChild(rb);
+    const ab = document.createElement('button'); ab.className = 'bd'; ab.textContent = '\u23F9 Abort';
+    ab.addEventListener('click', () => rnd.submitInterrupt({ action: 'abort' })); acts.appendChild(ab);
+    ct.appendChild(acts);
+    const rd = document.createElement('div'); rd.style.display = 'none'; rd.style.marginTop = '10px';
+    const ta = document.createElement('textarea'); ta.placeholder = 'Feedback...'; rd.appendChild(ta);
+    const sb = document.createElement('button'); sb.className = 'bp'; sb.textContent = 'Submit'; sb.style.marginTop = '6px';
+    sb.addEventListener('click', () => rnd.submitInterrupt({ action: 'revise', feedback: ta.value })); rd.appendChild(sb);
+    ct.appendChild(rd);
+    rb.addEventListener('click', () => { rd.style.display = rd.style.display === 'none' ? 'block' : 'none'; });
+  }
+
+  static _researchReview(data, ct, rnd) {
+    const h = document.createElement('h2'); h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    h.textContent = '\uD83D\uDD0D Research Review';
+    const badge = document.createElement('span'); badge.style.cssText = 'display:inline-block;margin-left:8px;padding:2px 10px;background:rgba(155,89,182,0.2);border:1px solid rgba(155,89,182,0.3);border-radius:12px;font-size:0.65em;vertical-align:middle;color:var(--purple);font-weight:500;'; badge.textContent = 'Round ' + (data.review_round || 1); h.appendChild(badge);
+    if (data.summary) { const pre = document.createElement('pre'); pre.className = 'rs'; pre.textContent = data.summary; ct.appendChild(pre); }
+    const acts = document.createElement('div'); acts.className = 'ra';
+    const cb = document.createElement('button'); cb.className = 'bc'; cb.textContent = '\u2705 Confirm';
+    cb.addEventListener('click', () => rnd.submitInterrupt({ action: 'confirm' })); acts.appendChild(cb);
+    const rb = document.createElement('button'); rb.className = 'bs'; rb.textContent = '\u270F\uFE0F Revise'; acts.appendChild(rb);
+    ct.appendChild(acts);
+    const rd = document.createElement('div'); rd.style.display = 'none'; rd.style.marginTop = '10px';
+    const ta = document.createElement('textarea'); ta.placeholder = 'Feedback...'; rd.appendChild(ta);
+    const sb = document.createElement('button'); sb.className = 'bp'; sb.textContent = 'Submit'; sb.style.marginTop = '6px';
+    sb.addEventListener('click', () => rnd.submitInterrupt({ action: 'revise', feedback: ta.value })); rd.appendChild(sb);
+    ct.appendChild(rd);
+    rb.addEventListener('click', () => { rd.style.display = rd.style.display === 'none' ? 'block' : 'none'; });
+  }
+
+  static _researchQ(data, ct, rnd) {
+    const h = document.createElement('h2'); h.textContent = '\uD83D\uDD2C Research Clarification'; h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    if (data.domain) { const p = document.createElement('p'); p.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 10px;'; p.textContent = 'Domain: ' + data.domain; ct.appendChild(p); }
+    const areas = [];
+    (data.questions || []).forEach((q, i) => {
+      const d = document.createElement('div'); d.className = 'qi';
+      const p = document.createElement('p'); p.textContent = (i + 1) + '. ' + q; d.appendChild(p);
+      const ta = document.createElement('textarea'); ta.placeholder = 'Answer...'; ta.rows = 2; d.appendChild(ta);
+      ct.appendChild(d); areas.push(ta);
+    });
+    const btn = document.createElement('button'); btn.className = 'bp'; btn.textContent = 'Submit';
+    btn.addEventListener('click', () => rnd.submitInterrupt(areas.map(ta => ta.value || 'Proceed.')));
+    ct.appendChild(btn);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §7  INIT
+   ═══════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('game');
+  const engine = new Engine(canvas);
+  const sim = new SimRenderer(engine);
+  sim.connect();
+
+  /* Spawn fixed characters at start */
+  sim._spawnChar({ id: 'ceo', name: 'Director Kim', color: '#4A90D9', role: 'ceo', home_room: 'ceo_office', emoji: '\uD83D\uDC54' }, 'ceo_office');
+  sim._spawnChar({ id: 'deep_researcher', name: 'Dr. Choi', color: '#9B59B6', role: 'specialist', home_room: 'research_lab', emoji: '\uD83D\uDD2C' }, 'research_lab');
+
+  /* Idle ambient: CEO reads while waiting for task */
+  const ceoChar = engine.chars.get('ceo');
+  if (ceoChar) { ceoChar.state = 'sitting'; ceoChar.setBubble('대기 중...', 5000); }
+  engine._hudLabel = 'Waiting for task...';
+
+  /* Global keyboard shortcuts */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      /* Close done overlay if open → triggers celebration */
+      const doneOv = document.getElementById('done-ov');
+      if (!doneOv.classList.contains('h')) {
+        doneOv.classList.add('h');
+        sim._startCelebrationChoreography();
+        sim._showNewTaskButton();
+        return;
+      }
+    }
+  });
+
+  const goBtn = document.getElementById('go-btn');
+  const taskIn = document.getElementById('task-in');
+  const taskOv = document.getElementById('task-ov');
+
+  goBtn.addEventListener('click', () => {
+    const task = taskIn.value.trim();
+    if (!task) {
+      taskIn.style.borderColor = 'var(--red)';
+      taskIn.setAttribute('placeholder', '작업 내용을 입력해주세요!');
+      taskIn.focus();
+      setTimeout(() => { taskIn.style.borderColor = ''; }, 2000);
+      return;
+    }
+    /* Disable input while connecting */
+    goBtn.disabled = true;
+    goBtn.textContent = '연결 중...';
+    goBtn.style.opacity = '0.6';
+    taskIn.disabled = true;
+    sim.send({ type: 'start', task });
+    taskOv.classList.add('h');
+    sim.startTimer();
+    sim.addLog('Task started: ' + task, 'system');
+    /* Reset in case user returns via New Task */
+    goBtn.disabled = false;
+    goBtn.textContent = '시작';
+    goBtn.style.opacity = '';
+    taskIn.disabled = false;
+  });
+  taskIn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); goBtn.click(); }
+  });
+  /* Auto-focus task input for immediate typing */
+  taskIn.focus();
+
+  /* Log filter chips */
+  const filterPanel = document.getElementById('log-filters');
+  const filters = [
+    { label: 'All', value: 'all' },
+    { label: 'CEO', value: 'ceo' },
+    { label: 'Leader', value: 'leader' },
+    { label: 'Worker', value: 'worker' },
+    { label: 'System', value: 'system' },
+  ];
+  let activeFilter = 'all';
+  for (const f of filters) {
+    const chip = document.createElement('button');
+    chip.className = 'log-chip' + (f.value === 'all' ? ' active' : '');
+    chip.textContent = f.label;
+    chip.dataset.filter = f.value;
+    chip.addEventListener('click', () => {
+      activeFilter = f.value;
+      filterPanel.querySelectorAll('.log-chip').forEach(c => c.classList.toggle('active', c.dataset.filter === f.value));
+      document.querySelectorAll('#log .le').forEach(el => {
+        el.classList.toggle('hide-filter', f.value !== 'all' && !el.classList.contains(f.value));
+      });
+    });
+    filterPanel.appendChild(chip);
+  }
+  /* Monkey-patch addLog to respect active filter */
+  const origAddLog = sim.addLog.bind(sim);
+  sim.addLog = (text, style) => {
+    origAddLog(text, style);
+    if (activeFilter !== 'all') {
+      const last = sim.logEl.lastElementChild;
+      if (last && !last.classList.contains(activeFilter)) last.classList.add('hide-filter');
+    }
+  };
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,557 @@
+/* mode-schedule.js — 스케줄팀 UI: 정기 자동 실행 관리
+ *
+ * 기존 company-builder WS를 통해 스케줄 CRUD.
+ * 스케줄 목록 + 생성 폼 + 실행 이력 대시보드.
+ */
+var ScheduleTeamManager = (function () {
+  'use strict';
+
+  var _ws = null;
+  var _container = null;
+  var _schedules = [];
+  var _strategies = [];
+  var _pendingTask = '';
+  var _pendingCron = '';
+
+  function mountInShell(container) {
+    _container = container;
+    _connect();
+  }
+
+  function _connect() {
+    // 이미 열린 WS가 있어도, onmessage가 이 탭의 핸들러인지 확인
+    if (_ws && _ws.readyState === WebSocket.OPEN && _ws._scheduleMode) return;
+    // 기존 WS 닫기 (다른 탭에서 열었을 수 있음)
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      try { _ws.close(); } catch(e) {}
+    }
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + location.host + '/ws/company-builder';
+    _ws = new WebSocket(url);
+
+    _ws._scheduleMode = true;
+    _ws.onopen = function () {
+      _send({ type: 'list_schedules' });
+      _send({ type: 'list_strategies' });
+    };
+
+    _ws.onmessage = function (e) {
+      try {
+        var msg = JSON.parse(e.data);
+        if (msg.type === 'schedule_list') {
+          _schedules = (msg.data && msg.data.schedules) || [];
+          _render();
+        } else if (msg.type === 'builder_strategies') {
+          _strategies = (msg.data && msg.data.strategies) || [];
+          _render();
+        } else if (msg.type === 'schedule_saved' || msg.type === 'schedule_deleted' || msg.type === 'schedule_toggled') {
+          _send({ type: 'list_schedules' });
+        } else if (msg.type === 'schedule_detail_prompt') {
+          _showDetailForm();
+        } else if (msg.type === 'schedule_questions') {
+          // 레거시 호환
+          _showDetailForm();
+        } else if (msg.type === 'schedule_running') {
+          _showRunProgress(msg.data && msg.data.schedule_id);
+        } else if (msg.type === 'schedule_run_complete') {
+          _hideRunProgress(msg.data);
+          _send({ type: 'list_schedules' });
+        } else if (msg.type === 'error') {
+          _hideRunProgress({ status: 'error' });
+        }
+      } catch (err) {}
+    };
+
+    _ws.onclose = function () { _ws = null; };
+  }
+
+  function _send(obj) {
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      _ws.send(JSON.stringify(obj));
+    }
+  }
+
+  function _render() {
+    if (!_container) return;
+    while (_container.firstChild) _container.removeChild(_container.firstChild);
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'st-wrapper';
+
+    // 헤더
+    var header = document.createElement('div');
+    header.className = 'st-header';
+    var title = document.createElement('h2');
+    title.className = 'st-title';
+    title.textContent = '스케줄팀';
+    var subtitle = document.createElement('p');
+    subtitle.className = 'st-subtitle';
+    subtitle.textContent = '정해진 시간에 자동으로 분석을 실행합니다.';
+    header.appendChild(title);
+    header.appendChild(subtitle);
+    wrapper.appendChild(header);
+
+    // 새 스케줄 생성 폼
+    var form = document.createElement('div');
+    form.className = 'st-form';
+
+    var taskInput = document.createElement('input');
+    taskInput.className = 'st-input';
+    taskInput.id = 'st-task';
+    taskInput.placeholder = '작업 내용 (예: 경쟁사 동향 모니터링)';
+
+    // 시간 선택 UI (시/분/요일)
+    var timeRow = document.createElement('div');
+    timeRow.className = 'st-time-row';
+
+    var hourSelect = document.createElement('select');
+    hourSelect.className = 'st-input st-time-select';
+    hourSelect.id = 'st-hour';
+    for (var h = 0; h < 24; h++) {
+      var opt = document.createElement('option');
+      opt.value = h;
+      opt.textContent = (h < 10 ? '0' : '') + h + '시';
+      if (h === 9) opt.selected = true;
+      hourSelect.appendChild(opt);
+    }
+
+    var minSelect = document.createElement('select');
+    minSelect.className = 'st-input st-time-select';
+    minSelect.id = 'st-min';
+    for (var m = 0; m < 60; m += 5) {
+      var opt2 = document.createElement('option');
+      opt2.value = m;
+      opt2.textContent = (m < 10 ? '0' : '') + m + '분';
+      if (m === 0) opt2.selected = true;
+      minSelect.appendChild(opt2);
+    }
+
+    var timeSep = document.createElement('span');
+    timeSep.className = 'st-time-sep';
+    timeSep.textContent = ':';
+
+    timeRow.appendChild(hourSelect);
+    timeRow.appendChild(timeSep);
+    timeRow.appendChild(minSelect);
+
+    // 요일 체크박스
+    var dowRow = document.createElement('div');
+    dowRow.className = 'st-dow-row';
+    var dowLabel = document.createElement('span');
+    dowLabel.className = 'st-dow-label';
+    dowLabel.textContent = '반복 요일';
+    dowRow.appendChild(dowLabel);
+
+    var dayNames = ['월', '화', '수', '목', '금', '토', '일'];
+    var dayCronVals = ['1', '2', '3', '4', '5', '6', '0'];
+    for (var di = 0; di < dayNames.length; di++) {
+      var dayBtn = document.createElement('button');
+      dayBtn.type = 'button';
+      dayBtn.className = 'st-dow-btn';
+      dayBtn.textContent = dayNames[di];
+      dayBtn.dataset.cronVal = dayCronVals[di];
+      dayBtn.addEventListener('click', function () {
+        this.classList.toggle('st-dow-active');
+      });
+      dowRow.appendChild(dayBtn);
+    }
+
+    var dowHint = document.createElement('div');
+    dowHint.className = 'st-cron-help';
+    dowHint.textContent = '요일을 선택하지 않으면 매일 실행됩니다';
+
+    // 숨겨진 cron 값 (호환용)
+    var cronInput = document.createElement('input');
+    cronInput.type = 'hidden';
+    cronInput.id = 'st-cron';
+
+    var fmtSelect = document.createElement('select');
+    fmtSelect.className = 'st-input st-input-sm';
+    fmtSelect.id = 'st-format';
+    [
+      { v: 'html', l: '📄 HTML' },
+      { v: 'pdf', l: '📑 PDF' },
+      { v: 'markdown', l: '📝 Markdown' },
+      { v: 'csv', l: '📊 CSV' },
+      { v: 'json', l: '{} JSON' },
+    ].forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o.v;
+      opt.textContent = o.l;
+      fmtSelect.appendChild(opt);
+    });
+
+    var modeSelect = document.createElement('select');
+    modeSelect.className = 'st-input st-input-sm';
+    modeSelect.id = 'st-output-mode';
+    [
+      { v: 'replace', l: '🔄 매번 새로 (이전 결과와 비교)' },
+      { v: 'append', l: '📎 누적 추가 (기존 파일에 추가)' },
+    ].forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o.v;
+      opt.textContent = o.l;
+      modeSelect.appendChild(opt);
+    });
+
+    var addBtn = document.createElement('button');
+    addBtn.className = 'st-add-btn';
+    addBtn.id = 'st-add-btn';
+    addBtn.textContent = '+ 스케줄 추가';
+    addBtn.addEventListener('click', function () {
+      var task = document.getElementById('st-task').value.trim();
+      if (!task) return;
+      addBtn.disabled = true;
+      addBtn.textContent = '질문 생성 중...';
+      _pendingTask = task;
+      // 시/분/요일 UI → cron 변환
+      var hVal = document.getElementById('st-hour').value;
+      var mVal = document.getElementById('st-min').value;
+      var activeDays = document.querySelectorAll('.st-dow-btn.st-dow-active');
+      var dowPart = '*';
+      if (activeDays.length > 0) {
+        var days = [];
+        for (var di2 = 0; di2 < activeDays.length; di2++) {
+          days.push(activeDays[di2].dataset.cronVal);
+        }
+        dowPart = days.join(',');
+      }
+      _pendingCron = mVal + ' ' + hVal + ' * * ' + dowPart;
+      _connect();
+      // WS 연결 보장 후 전송
+      var retries = 0;
+      var trySend = function () {
+        if (_ws && _ws.readyState === WebSocket.OPEN) {
+          _send({ type: 'generate_schedule_questions', data: { task: task } });
+        } else if (retries < 30) {
+          retries++;
+          setTimeout(trySend, 200);
+        } else {
+          // 연결 실패 시 질문 없이 바로 저장
+          addBtn.disabled = false;
+          addBtn.textContent = '+ 스케줄 추가';
+          _saveScheduleWithAnswers([]);
+        }
+      };
+      trySend();
+    });
+
+    form.appendChild(taskInput);
+    form.appendChild(timeRow);
+    form.appendChild(dowRow);
+    form.appendChild(dowHint);
+    form.appendChild(cronInput);
+    form.appendChild(fmtSelect);
+    form.appendChild(modeSelect);
+    form.appendChild(addBtn);
+    wrapper.appendChild(form);
+
+    // 스케줄 목록
+    var listTitle = document.createElement('h3');
+    listTitle.className = 'st-list-title';
+    listTitle.textContent = '등록된 스케줄 (' + _schedules.length + ')';
+    wrapper.appendChild(listTitle);
+
+    if (_schedules.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'st-empty';
+      empty.textContent = '등록된 스케줄이 없습니다.';
+      wrapper.appendChild(empty);
+    } else {
+      var list = document.createElement('div');
+      list.className = 'st-list';
+      for (var i = 0; i < _schedules.length; i++) {
+        list.appendChild(_renderScheduleCard(_schedules[i]));
+      }
+      wrapper.appendChild(list);
+    }
+
+    _container.appendChild(wrapper);
+  }
+
+  function _renderScheduleCard(sched) {
+    var card = document.createElement('div');
+    card.className = 'st-card' + (sched.enabled ? '' : ' st-card-disabled');
+
+    // 상단: 이름 + 토글
+    var top = document.createElement('div');
+    top.className = 'st-card-top';
+
+    var name = document.createElement('div');
+    name.className = 'st-card-name';
+    name.textContent = sched.name || sched.task_description || '(무제)';
+    top.appendChild(name);
+
+    var toggle = document.createElement('button');
+    toggle.className = 'st-toggle' + (sched.enabled ? ' st-toggle-on' : '');
+    toggle.textContent = sched.enabled ? 'ON' : 'OFF';
+    toggle.addEventListener('click', function () {
+      _send({ type: 'toggle_schedule', data: { schedule_id: sched.id, enabled: !sched.enabled } });
+    });
+    top.appendChild(toggle);
+
+    card.appendChild(top);
+
+    // 크론 + 작업 설명
+    var cron = document.createElement('div');
+    cron.className = 'st-card-cron';
+    cron.textContent = _cronToKorean(sched.cron_expression || '');
+    card.appendChild(cron);
+
+    var task = document.createElement('div');
+    task.className = 'st-card-task';
+    task.textContent = sched.task_description || '';
+    card.appendChild(task);
+
+    // 출력 모드 배지
+    if (sched.output_mode === 'append') {
+      var badge = document.createElement('span');
+      badge.className = 'st-mode-badge st-mode-append';
+      badge.textContent = '📎 누적 모드';
+      card.appendChild(badge);
+    }
+
+    // 실행 이력
+    var history = sched.run_history || [];
+    if (history.length > 0) {
+      var lastRun = history[history.length - 1];
+      var histEl = document.createElement('div');
+      histEl.className = 'st-card-history';
+
+      var statusLabel = lastRun.status === 'completed' ? '✅ 완료' :
+                        lastRun.status === 'failed' ? '❌ 실패' :
+                        lastRun.status || '';
+      var duration = lastRun.duration_s ? ' (' + Math.round(lastRun.duration_s) + '초)' : '';
+      histEl.textContent = '마지막: ' + (lastRun.started_at || '').substring(0, 16) +
+        ' — ' + statusLabel + duration;
+      card.appendChild(histEl);
+
+      // 보고서 링크 + 폴더 열기
+      if (lastRun.report_path) {
+        var reportRow = document.createElement('div');
+        reportRow.className = 'st-report-row';
+
+        var reportLink = document.createElement('a');
+        reportLink.className = 'st-report-link';
+        reportLink.href = lastRun.report_path;
+        reportLink.target = '_blank';
+        reportLink.textContent = '📄 보고서 보기';
+        reportRow.appendChild(reportLink);
+
+        var folderBtn = document.createElement('button');
+        folderBtn.className = 'st-folder-btn';
+        folderBtn.textContent = '📁 폴더 열기';
+        folderBtn.addEventListener('click', function () {
+          var localPath = 'data' + lastRun.report_path;
+          fetch('/api/open-folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: localPath }),
+          });
+        });
+        reportRow.appendChild(folderBtn);
+
+        card.appendChild(reportRow);
+      }
+    }
+
+    // 버튼 영역
+    var actions = document.createElement('div');
+    actions.className = 'st-card-actions';
+
+    var runBtn = document.createElement('button');
+    runBtn.className = 'st-run-btn';
+    runBtn.textContent = '지금 실행';
+    runBtn.addEventListener('click', function () {
+      runBtn.disabled = true;
+      runBtn.textContent = '실행 중...';
+      _send({ type: 'run_schedule_now', data: { schedule_id: sched.id } });
+    });
+    actions.appendChild(runBtn);
+
+    var del = document.createElement('button');
+    del.className = 'st-delete-btn';
+    del.textContent = '삭제';
+    del.addEventListener('click', function () {
+      _send({ type: 'delete_schedule', data: { schedule_id: sched.id } });
+    });
+    actions.appendChild(del);
+
+    card.appendChild(actions);
+
+    return card;
+  }
+
+  function _cronToKorean(cron) {
+    if (!cron) return '';
+    var parts = cron.split(' ');
+    if (parts.length !== 5) return cron;
+    var min = parts[0], hour = parts[1], dom = parts[2], mon = parts[3], dow = parts[4];
+    var dayNames = { '0': '일', '1': '월', '2': '화', '3': '수', '4': '목', '5': '금', '6': '토', '7': '일' };
+
+    if (dom === '*' && mon === '*' && dow === '*') {
+      return '매일 ' + hour + ':' + (min.length === 1 ? '0' + min : min);
+    }
+    if (dom === '*' && mon === '*' && dow !== '*') {
+      var dayLabel = dayNames[dow] || dow;
+      return '매주 ' + dayLabel + '요일 ' + hour + ':' + (min.length === 1 ? '0' + min : min);
+    }
+    return cron;
+  }
+
+  function _showDetailForm() {
+    // 버튼 복원
+    var addBtn = document.getElementById('st-add-btn');
+    if (addBtn) { addBtn.disabled = false; addBtn.textContent = '+ 스케줄 추가'; }
+
+    // 기존 폼 제거
+    var old = document.getElementById('st-qa-form');
+    if (old) old.remove();
+
+    var qa = document.createElement('div');
+    qa.id = 'st-qa-form';
+    qa.className = 'st-qa-form';
+
+    var qaTitle = document.createElement('div');
+    qaTitle.className = 'st-qa-title';
+    qaTitle.textContent = '📝 작업 상세 설명 (선택사항)';
+    qa.appendChild(qaTitle);
+
+    var hint = document.createElement('div');
+    hint.className = 'st-cron-help';
+    hint.textContent = '범위, 관점, 주의사항 등을 자유롭게 적으면 더 정확한 결과를 얻을 수 있습니다.';
+    qa.appendChild(hint);
+
+    var textarea = document.createElement('textarea');
+    textarea.className = 'st-input st-detail-textarea';
+    textarea.id = 'st-detail-desc';
+    textarea.rows = 4;
+    textarea.placeholder = '예: 국내외 AI 뉴스 중 LLM과 규제 관련 내용을 중심으로, 핵심만 요약해주세요. 기술적 세부사항보다는 비즈니스 영향 위주로.';
+    qa.appendChild(textarea);
+
+    var btnRow = document.createElement('div');
+    btnRow.className = 'st-qa-actions';
+
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'st-add-btn';
+    confirmBtn.textContent = '등록';
+    confirmBtn.addEventListener('click', function () {
+      var desc = textarea.value.trim();
+      qa.remove();
+      _saveScheduleWithDetail(desc);
+    });
+
+    var skipBtn = document.createElement('button');
+    skipBtn.className = 'st-delete-btn';
+    skipBtn.textContent = '건너뛰기';
+    skipBtn.addEventListener('click', function () {
+      qa.remove();
+      _saveScheduleWithDetail('');
+    });
+
+    btnRow.appendChild(confirmBtn);
+    btnRow.appendChild(skipBtn);
+    qa.appendChild(btnRow);
+
+    // 폼 아래에 삽입
+    var form = _container.querySelector('.st-form');
+    if (form) form.after(qa);
+    else _container.appendChild(qa);
+  }
+
+  function _saveScheduleWithAnswers(answers) {
+    _saveScheduleWithDetail('', answers);
+  }
+
+  function _saveScheduleWithDetail(detail, legacyAnswers) {
+    var fmt = document.getElementById('st-format');
+    var mode = document.getElementById('st-output-mode');
+    var data = {
+      task_description: _pendingTask,
+      cron_expression: _pendingCron,
+      name: _pendingTask.substring(0, 30),
+      enabled: true,
+      output_format: fmt ? fmt.value : 'html',
+      output_mode: mode ? mode.value : 'replace',
+    };
+    if (detail) {
+      data.detail_description = detail;
+    } else if (legacyAnswers && legacyAnswers.length > 0) {
+      data.clarify_answers = legacyAnswers;
+    }
+    _send({ type: 'save_schedule', data: data });
+    var taskInput = document.getElementById('st-task');
+    if (taskInput) taskInput.value = '';
+    _pendingTask = '';
+    _pendingCron = '';
+  }
+
+  var _progressTimer = null;
+  var _progressStart = 0;
+
+  function _showRunProgress(scheduleId) {
+    // 카드 내에 프로그레스 바 삽입
+    var cards = document.querySelectorAll('.st-card');
+    _progressStart = Date.now();
+
+    // 모든 카드 위에 프로그레스 오버레이
+    var existing = document.getElementById('st-run-overlay');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'st-run-overlay';
+    overlay.className = 'st-run-overlay';
+
+    var spinner = document.createElement('div');
+    spinner.className = 'st-spinner';
+
+    var msg = document.createElement('div');
+    msg.className = 'st-run-msg';
+    msg.textContent = '스케줄 실행 중...';
+
+    var timer = document.createElement('div');
+    timer.className = 'st-run-timer';
+    timer.id = 'st-run-timer';
+    timer.textContent = '0:00';
+
+    overlay.appendChild(spinner);
+    overlay.appendChild(msg);
+    overlay.appendChild(timer);
+
+    if (_container) _container.appendChild(overlay);
+
+    _progressTimer = setInterval(function () {
+      var el = document.getElementById('st-run-timer');
+      if (!el) return;
+      var sec = Math.round((Date.now() - _progressStart) / 1000);
+      var m = Math.floor(sec / 60);
+      var s = sec % 60;
+      el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    }, 1000);
+  }
+
+  function _hideRunProgress(data) {
+    if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+    var overlay = document.getElementById('st-run-overlay');
+    if (overlay) {
+      var status = (data && data.status) || 'unknown';
+      var duration = (data && data.duration_s) || 0;
+      var msg = overlay.querySelector('.st-run-msg');
+      if (msg) {
+        if (status === 'completed') {
+          msg.textContent = '✅ 완료 (' + Math.round(duration) + '초)';
+        } else {
+          msg.textContent = '❌ ' + status + ' (' + Math.round(duration) + '초)';
+        }
+      }
+      // 3초 후 오버레이 제거
+      setTimeout(function () {
+        if (overlay.parentNode) overlay.remove();
+      }, 3000);
+    }
+  }
+
+  return {
+    mountInShell: mountInShell,
+  };
+})();

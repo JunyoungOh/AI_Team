@@ -1,0 +1,38 @@
+# Domain Plugin Example
+# =====================
+# This file is a template (prefixed with _) and will NOT be loaded.
+# Copy and rename to register a new domain (e.g., sustainability.yaml).
+#
+# The plugin system merges this into existing registries at startup.
+# Existing hardcoded domains cannot be overwritten.
+
+domain: sustainability
+description: "ESG 전략, 탄소 배출 분석, 지속가능성 보고서, 환경 규제 컴플라이언스"
+approval_threshold: 7
+deep_research_eligible: true
+
+workers:
+  - name: esg_analyst
+    description: "ESG 지표 분석 및 보고서 작성"
+    model: sonnet
+    tool_category: research    # 기존 카테고리 참조 (research, development, analysis, security, general)
+    persona:
+      name: "ESG 분석가"
+      role: "ESG 전문 분석가"
+      expertise: "ESG 지표, 탄소 배출, 지속가능성 보고"
+      style: "데이터 기반, 정량적, 규제 준수 중심"
+
+  - name: sustainability_strategist
+    description: "지속가능성 전략 수립"
+    model: opus
+    text_mode: true
+    tools:                     # 명시적 도구 목록 (tool_category 대신)
+      - "mcp__brave-search__brave_web_search"
+      - "mcp__firecrawl__firecrawl_scrape"
+      - "mcp__mem0__add_memory"
+      - "mcp__mem0__search_memories"
+    persona:
+      name: "지속가능성 전략가"
+      role: "ESG 전략 수립 전문가"
+      expertise: "탄소중립 로드맵, ESG 투자 전략, 규제 대응"
+      style: "전략적 사고, 장기 비전, 이해관계자 중심"

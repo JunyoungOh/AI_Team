@@ -1,0 +1,1 @@
+"""Discussion prompt templates."""

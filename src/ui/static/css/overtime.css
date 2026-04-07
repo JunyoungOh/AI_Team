@@ -1,0 +1,180 @@
+/* ── Overtime Mode (야근팀) ── */
+
+.ot-form {
+  max-width: 520px;
+  margin: 60px auto;
+  padding: 32px;
+}
+.ot-title {
+  font-size: 1.4em;
+  font-weight: 800;
+  color: var(--cv-text, #e6edf3);
+  margin-bottom: 6px;
+}
+.ot-subtitle {
+  font-size: 0.82em;
+  color: var(--cv-dim, #8b949e);
+  margin-bottom: 28px;
+}
+.ot-label {
+  display: block;
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--cv-dim, #8b949e);
+  margin-bottom: 6px;
+  margin-top: 16px;
+}
+.ot-input, .ot-select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--cv-border, #30363d);
+  background: rgba(255,255,255,0.04);
+  color: var(--cv-text, #e6edf3);
+  font-size: 0.85em;
+}
+.ot-input:focus, .ot-select:focus {
+  outline: none;
+  border-color: var(--cv-accent, #60a5fa);
+}
+.ot-start-btn {
+  width: 100%;
+  margin-top: 24px;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0f3460, #16213e);
+  color: #fff;
+  font-size: 0.9em;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.ot-start-btn:hover { opacity: 0.85; }
+
+/* ── Progress ── */
+.ot-progress {
+  padding: 24px;
+  max-width: 700px;
+  margin: 0 auto;
+}
+.ot-progress-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--cv-border, #30363d);
+}
+.ot-progress-header h3 {
+  font-size: 1.1em;
+  font-weight: 800;
+  color: var(--cv-text, #e6edf3);
+  margin-bottom: 8px;
+}
+.ot-info {
+  font-size: 0.82em;
+  color: var(--cv-dim, #8b949e);
+}
+.ot-goal-text {
+  font-size: 0.78em;
+  color: var(--cv-accent, #60a5fa);
+  margin-top: 6px;
+}
+.ot-stop-btn {
+  margin-top: 12px;
+  padding: 6px 16px;
+  border: 1px solid rgba(248,81,73,0.4);
+  border-radius: 6px;
+  background: rgba(248,81,73,0.1);
+  color: #f85149;
+  font-size: 0.75em;
+  cursor: pointer;
+}
+.ot-stop-btn:hover { background: rgba(248,81,73,0.2); }
+
+/* ── Iteration Cards ── */
+.ot-iterations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+.ot-iter-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--cv-border, #30363d);
+  border-radius: 10px;
+  padding: 14px 18px;
+  transition: border-color 0.2s;
+}
+.ot-iter-active {
+  border-color: var(--cv-accent, #60a5fa);
+  background: rgba(96,165,250,0.05);
+}
+.ot-iter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ot-iter-num {
+  font-size: 0.8em;
+  font-weight: 700;
+  color: var(--cv-text, #e6edf3);
+}
+.ot-iter-score {
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--cv-dim, #8b949e);
+}
+.ot-score-pass { color: var(--cv-green, #4ade80); }
+.ot-score-fail { color: #f59e0b; }
+.ot-iter-body {
+  font-size: 0.75em;
+  color: var(--cv-dim, #8b949e);
+}
+.ot-iter-summary { margin-bottom: 4px; }
+.ot-iter-gaps { color: #f59e0b; font-size: 0.95em; }
+.ot-tool-counter {
+  font-size: 0.9em;
+  color: var(--cv-accent, #60a5fa);
+  margin-top: 4px;
+}
+
+/* ── Log Entries ── */
+.ot-log-entry {
+  font-size: 0.78em;
+  color: var(--cv-dim, #8b949e);
+  padding: 8px 0;
+}
+.ot-report-link {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  background: rgba(74,222,128,0.1);
+  border: 1px solid rgba(74,222,128,0.3);
+  color: var(--cv-green, #4ade80);
+  font-weight: 700;
+  font-size: 0.85em;
+  text-decoration: none;
+}
+.ot-report-link:hover { background: rgba(74,222,128,0.2); }
+.ot-report-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.ot-folder-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--cv-border, #30363d);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cv-dim, #8b949e);
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ot-folder-btn:hover {
+  border-color: var(--cv-accent, #60a5fa);
+  color: var(--cv-accent, #60a5fa);
+}

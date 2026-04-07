@@ -1,0 +1,245 @@
+/**
+ * CardChatPanel — right-side chat panel for card view.
+ *
+ * Usage:
+ *   const panel = new CardChatPanel(containerEl, {
+ *     onSend: (text) => { ... }
+ *   });
+ */
+class CardChatPanel {
+  /**
+   * @param {HTMLElement} containerEl — element to build the panel inside
+   * @param {{ onSend?: (text: string) => void }} opts
+   */
+  constructor(containerEl, opts = {}) {
+    this.el = containerEl;
+    this.onSend = opts.onSend || (() => {});
+
+    // --- build DOM ---
+    while (this.el.firstChild) this.el.removeChild(this.el.firstChild);
+
+    // header
+    const header = document.createElement('div');
+    header.className = 'cc-header';
+    this.titleEl = document.createElement('span');
+    this.titleEl.className = 'cc-header-title';
+    this.titleEl.textContent = 'Chat';
+    const title = this.titleEl;
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'cc-close';
+    closeBtn.title = '\ub2eb\uae30'; // 닫기
+    closeBtn.textContent = '\u00d7'; // ×
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // messages area
+    this.messagesEl = document.createElement('div');
+    this.messagesEl.className = 'cc-messages';
+
+    // input area
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'cc-input-wrap';
+    this.inputEl = document.createElement('input');
+    this.inputEl.className = 'cc-input';
+    this.inputEl.placeholder = '\uba54\uc2dc\uc9c0 \uc785\ub825...'; // 메시지 입력...
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'cc-send';
+    sendBtn.textContent = '\uc804\uc1a1'; // 전송
+    inputWrap.appendChild(this.inputEl);
+    inputWrap.appendChild(sendBtn);
+
+    this.el.appendChild(header);
+    this.el.appendChild(this.messagesEl);
+    this.el.appendChild(inputWrap);
+
+    // --- event listeners ---
+    closeBtn.addEventListener('click', () => this.toggle(false));
+
+    sendBtn.addEventListener('click', () => this._handleSend());
+
+    this.inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        this._handleSend();
+      }
+    });
+  }
+
+  /** @private */
+  _handleSend() {
+    const text = this.inputEl.value.trim();
+    if (!text) return;
+    this.addMessage(text, 'user');
+    this.showThinking();
+    this.onSend(text);
+    this.inputEl.value = '';
+  }
+
+  /**
+   * Add a message bubble.
+   * @param {string} text
+   * @param {'user'|'system'} type
+   * @param {{ welcome?: boolean }} opts
+   */
+  addMessage(text, type, opts = {}) {
+    // 시스템 응답이 오면 thinking indicator 제거
+    if (type === 'system') this.hideThinking();
+
+    const msg = document.createElement('div');
+    msg.className = `cc-message cc-message-${type}`;
+    if (opts.welcome) msg.classList.add('cc-welcome');
+    if (opts.preserveNewlines) {
+      msg.style.whiteSpace = 'pre-wrap';
+    }
+    msg.textContent = text;
+    this.messagesEl.appendChild(msg);
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /**
+   * Open or close the panel.
+   * @param {boolean} open
+   */
+  toggle(open) {
+    const app = document.getElementById('card-app');
+    if (app) {
+      app.classList.toggle('chat-open', open);
+    }
+    this.el.classList.toggle('collapsed', !open);
+  }
+
+  /**
+   * Change the panel header title.
+   * @param {string} text
+   */
+  setTitle(text) {
+    if (this.titleEl) this.titleEl.textContent = text;
+  }
+
+  /**
+   * Change input placeholder text.
+   * @param {string} text
+   */
+  setInputPlaceholder(text) {
+    if (this.inputEl) this.inputEl.placeholder = text;
+  }
+
+  /**
+   * Add a clickable report link as a message.
+   * @param {string} reportPath — URL or path to the report
+   */
+  addReportLink(reportPath, localPath) {
+    this.hideThinking();
+    const msg = document.createElement('div');
+    msg.className = 'cc-message cc-message-system cc-report-link';
+    const link = document.createElement('a');
+    link.href = reportPath;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = '📄 보고서 보기';
+    msg.appendChild(link);
+
+    if (localPath) {
+      const folderBtn = document.createElement('button');
+      folderBtn.className = 'cc-folder-btn';
+      folderBtn.textContent = '📁 폴더 열기';
+      folderBtn.addEventListener('click', () => {
+        fetch('/api/open-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: localPath }),
+        });
+      });
+      msg.appendChild(folderBtn);
+    }
+
+    this.messagesEl.appendChild(msg);
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /**
+   * Add action buttons (e.g., for builder mode quick actions).
+   * @param {Array<{label: string, icon: string, action: function}>} buttons
+   */
+  addActionButtons(buttons) {
+    const wrap = document.createElement('div');
+    wrap.className = 'cc-action-btns';
+    buttons.forEach(btn => {
+      const el = document.createElement('button');
+      el.className = 'cc-action-btn';
+      el.textContent = (btn.icon || '') + ' ' + btn.label;
+      el.addEventListener('click', () => {
+        if (btn.action) btn.action();
+      });
+      wrap.appendChild(el);
+    });
+    this.messagesEl.appendChild(wrap);
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /**
+   * Show output format selector chips.
+   * @param {Array<{id: string, label: string, icon: string, default?: boolean}>} options
+   */
+  showFormatSelector(options) {
+    this._selectedFormat = 'html';
+    const wrap = document.createElement('div');
+    wrap.className = 'cc-format-selector';
+    const label = document.createElement('div');
+    label.className = 'cc-format-label';
+    label.textContent = '출력 형식 선택';
+    wrap.appendChild(label);
+    const chips = document.createElement('div');
+    chips.className = 'cc-format-chips';
+    options.forEach(opt => {
+      const chip = document.createElement('button');
+      chip.className = 'cc-format-chip';
+      if (opt.default) chip.classList.add('selected');
+      chip.dataset.formatId = opt.id;
+      chip.textContent = (opt.icon || '') + ' ' + opt.label;
+      chip.addEventListener('click', () => {
+        chips.querySelectorAll('.cc-format-chip').forEach(c => c.classList.remove('selected'));
+        chip.classList.add('selected');
+        this._selectedFormat = opt.id;
+      });
+      chips.appendChild(chip);
+    });
+    wrap.appendChild(chips);
+    this.messagesEl.appendChild(wrap);
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /** Get the currently selected output format. */
+  getSelectedFormat() {
+    return this._selectedFormat || 'html';
+  }
+
+  /**
+   * Show a typing/thinking indicator in chat.
+   * Calling multiple times is safe — only one indicator at a time.
+   */
+  showThinking() {
+    this.hideThinking();
+    const msg = document.createElement('div');
+    msg.className = 'cc-message cc-message-system cc-thinking';
+    const dots = document.createElement('span');
+    dots.className = 'cc-thinking-dots';
+    for (var i = 0; i < 3; i++) dots.appendChild(document.createElement('span'));
+    msg.appendChild(dots);
+    this.messagesEl.appendChild(msg);
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /** Remove the thinking indicator if present. */
+  hideThinking() {
+    var el = this.messagesEl.querySelector('.cc-thinking');
+    if (el) el.remove();
+  }
+
+  /** Remove all messages. */
+  clear() {
+    while (this.messagesEl.firstChild) {
+      this.messagesEl.removeChild(this.messagesEl.firstChild);
+    }
+  }
+}

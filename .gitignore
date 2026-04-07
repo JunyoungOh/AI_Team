@@ -1,0 +1,52 @@
+# Secrets
+data/.jwt_secret
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LangGraph checkpoints
+*.sqlite
+*.db
+
+# bkit
+.bkit/
+
+# User data & reports
+data/users/
+data/reports/
+data/overtime/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+schedule_*.png
+concurrent_test.png
+report_*.png
+detail_*.png
+instant_*.png

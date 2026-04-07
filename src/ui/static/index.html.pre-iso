@@ -1,0 +1,4526 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise HQ — Corporate Simulation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --bg2: #161b22; --border: #30363d;
+  --text: #e6edf3; --dim: #8b949e;
+  --red: #e94560; --green: #2ecc71; --yellow: #f39c12; --blue: #4A90D9; --purple: #9B59B6;
+}
+body { font-family: 'Outfit', 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
+#app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 1fr 320px; grid-template-areas: "hd hd" "cv sb"; height: 100vh; }
+
+/* Header */
+#hdr { grid-area: hd; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+#hdr h1 { font-size: 1.05em; color: var(--red); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #e74c3c; display: inline-block; margin-right: 8px; }
+.dot.on { background: var(--green); }
+#step-lbl { font-size: 0.85em; color: var(--yellow); }
+#timer { font-size: 0.8em; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* Canvas area */
+#cv-wrap { grid-area: cv; display: flex; align-items: center; justify-content: center; background: #0a0a18; overflow: hidden; }
+#game { border-radius: 4px; max-width: 100%; max-height: 100%; }
+
+/* Sidebar */
+#sb { grid-area: sb; display: flex; flex-direction: column; background: var(--bg2); border-left: 1px solid var(--border); overflow: hidden; }
+#sb h3 { padding: 10px 14px 6px; font-size: 0.75em; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+#log-wrap { flex: 1; overflow-y: auto; }
+#log { padding: 6px 14px; }
+.le { padding: 3px 0; font-size: 0.78em; border-bottom: 1px solid rgba(255,255,255,0.03); animation: fi .3s; }
+.le .t { color: var(--dim); margin-right: 6px; font-size: 0.85em; }
+.le.ceo { color: var(--blue); } .le.leader { color: var(--green); }
+.le.worker { color: var(--red); } .le.system { color: var(--yellow); } .le.error { color: #e74c3c; font-weight: 600; }
+.le.hide-filter { display: none; }
+@keyframes fi { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:translateY(0); } }
+#log-filters { display: flex; gap: 4px; padding: 6px 14px 4px; flex-wrap: wrap; }
+.log-chip { padding: 2px 8px; border-radius: 10px; font-size: 0.7em; border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; transition: all .15s; }
+.log-chip.active { background: var(--border); color: var(--text); }
+#org-panel { border-top: 1px solid var(--border); max-height: 200px; overflow-y: auto; }
+#org { padding: 8px 14px; font-size: 0.78em; }
+.ol { margin-bottom: 4px; } .ol .dn { font-weight: 600; color: var(--green); }
+.ow { margin-left: 16px; color: var(--dim); }
+.ow .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.ow .status-dot.working { background: var(--yellow); animation: pulse-dot 1.5s infinite; }
+.ow .status-dot.done { background: var(--green); }
+.ow .status-dot.idle { background: var(--dim); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Overlay System ── */
+@keyframes ov-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ov-card-in { from { opacity: 0; transform: translateY(18px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes ov-shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+
+.ov {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  z-index: 100; animation: ov-fade 0.25s ease;
+  background: radial-gradient(ellipse at 50% 40%, rgba(13,17,23,0.82), rgba(0,0,0,0.92));
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.ov.h { display: none; }
+
+.oc {
+  background: linear-gradient(168deg, #1a2233 0%, #131920 100%);
+  border: 1px solid rgba(233,69,96,0.15);
+  border-radius: 20px; padding: 36px 34px;
+  max-width: 620px; width: 92%; max-height: 82vh; overflow-y: auto;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 8px 32px rgba(0,0,0,0.45), 0 32px 72px rgba(0,0,0,0.25);
+  animation: ov-card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+.oc::before {
+  content: ''; position: absolute; top: 0; left: 40px; right: 40px; height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--red) 30%, var(--purple) 70%, transparent 100%);
+  border-radius: 0 0 2px 2px; opacity: 0.8;
+}
+.oc::-webkit-scrollbar { width: 6px; }
+.oc::-webkit-scrollbar-track { background: transparent; }
+.oc::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+
+.oc h2 { margin-bottom: 16px; font-size: 1.3em; font-weight: 600; letter-spacing: -0.01em; }
+
+.oc textarea {
+  width: 100%; min-height: 70px; padding: 14px 16px; margin: 10px 0;
+  background: rgba(10,14,20,0.6); color: var(--text);
+  border: 1px solid rgba(48,54,61,0.7); border-radius: 12px;
+  font-family: inherit; font-size: 0.92em; resize: vertical; line-height: 1.6;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.oc textarea:focus {
+  outline: none; border-color: rgba(233,69,96,0.45);
+  box-shadow: 0 0 0 3px rgba(233,69,96,0.08), 0 0 20px rgba(233,69,96,0.06);
+}
+.oc textarea::placeholder { color: rgba(139,148,158,0.6); }
+
+.oc button {
+  padding: 11px 26px; margin: 4px; border: none; border-radius: 10px;
+  font-size: 0.88em; cursor: pointer; font-weight: 600; font-family: inherit;
+  letter-spacing: 0.01em; position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.oc button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); filter: brightness(1.12); }
+.oc button:active { transform: translateY(0); filter: brightness(0.95); }
+
+.bp { background: linear-gradient(135deg, var(--red) 0%, #c0392b 100%); color: #fff; }
+.bs { background: rgba(48,54,61,0.7); color: var(--text); border: 1px solid rgba(48,54,61,0.5); }
+.bc { background: linear-gradient(135deg, var(--green) 0%, #219a52 100%); color: #fff; }
+.bd { background: linear-gradient(135deg, #e74c3c 0%, #b83227 100%); color: #fff; }
+
+.ds {
+  margin: 16px 0; padding: 16px;
+  background: rgba(10,14,20,0.45); border-radius: 14px;
+  border: 1px solid rgba(48,54,61,0.4); border-left: 3px solid var(--green);
+}
+.ds h3 { font-size: 0.95em; margin-bottom: 8px; font-weight: 600; }
+.qi { margin: 10px 0; }
+.qi p { font-size: 0.88em; margin-bottom: 5px; line-height: 1.55; color: rgba(230,237,243,0.9); }
+.rs {
+  background: rgba(10,14,20,0.5); padding: 16px; border-radius: 12px;
+  font-size: 0.82em; white-space: pre-wrap; max-height: 300px; overflow-y: auto;
+  margin: 14px 0; border: 1px solid rgba(48,54,61,0.35); line-height: 1.65;
+}
+.ra { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.cc { text-align: center; } .cc h2 { color: var(--green); }
+
+#task-ov .oc { text-align: center; padding: 44px 38px; }
+#task-in { min-height: 90px; font-size: 1em; text-align: left; }
+
+/* ── Phase 3: Interaction Enhancement ── */
+/* Character popup card */
+.char-popup {
+  position: fixed; z-index: 90; pointer-events: auto;
+  animation: ov-card-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cp-card {
+  background: linear-gradient(168deg, #1a2233 0%, #131920 100%);
+  border: 1px solid rgba(233,69,96,0.2); border-radius: 14px;
+  padding: 16px 18px; min-width: 220px; max-width: 280px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.cp-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.cp-header .cp-emoji { font-size: 1.6em; }
+.cp-header .cp-name { font-weight: 600; font-size: 0.95em; }
+.cp-header .cp-title { font-size: 0.75em; color: var(--dim); }
+.cp-close {
+  position: absolute; top: 8px; right: 10px; background: none; border: none;
+  color: var(--dim); cursor: pointer; font-size: 1.1em; padding: 2px 6px;
+  border-radius: 4px; transition: color 0.15s;
+}
+.cp-close:hover { color: var(--text); }
+.cp-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 0; font-size: 0.8em;
+}
+.cp-row .cp-label { color: var(--dim); }
+.cp-row .cp-value { color: var(--text); }
+.cp-progress {
+  margin-top: 6px; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,0.06); overflow: hidden;
+}
+.cp-progress-bar {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  transition: width 0.3s;
+}
+.cp-bubbles {
+  margin-top: 8px; padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.cp-bubbles h4 { font-size: 0.7em; color: var(--dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.cp-bubble-item { font-size: 0.75em; color: var(--text); padding: 2px 0; opacity: 0.8; }
+
+/* Room hover tooltip */
+.room-tooltip {
+  position: fixed; z-index: 85; pointer-events: none;
+  background: rgba(22,27,34,0.95); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  font-size: 0.78em; animation: ov-fade 0.15s ease;
+}
+.rt-name { font-weight: 600; font-size: 0.9em; margin-bottom: 2px; }
+.rt-domain { color: var(--dim); font-size: 0.8em; margin-bottom: 4px; }
+.rt-occupants { color: var(--dim); font-size: 0.8em; }
+.rt-occupants span { color: var(--text); }
+
+/* Sidebar worker hover */
+.ow { cursor: pointer; padding: 1px 4px; border-radius: 4px; transition: background 0.15s; }
+.ow:hover { background: rgba(255,255,255,0.05); }
+.ow.ow-highlight { background: rgba(243,156,18,0.15); }
+
+/* Pinned bubble copy tooltip */
+.pin-tooltip {
+  position: fixed; z-index: 91; pointer-events: auto;
+  background: rgba(22,27,34,0.97); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; max-width: 300px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  animation: ov-card-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pin-tooltip-text { font-size: 0.82em; user-select: text; -webkit-user-select: text; line-height: 1.5; margin-bottom: 8px; }
+.pin-tooltip-copy {
+  font-size: 0.72em; color: var(--dim); padding: 4px 10px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer; transition: all 0.15s;
+}
+.pin-tooltip-copy:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+
+/* Log entry highlight flash */
+.le-flash { background: rgba(243,156,18,0.15); transition: background 1.5s ease-out; }
+
+/* ── Worker Progress Dashboard Panel ── */
+#wp-panel {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(180deg, rgba(13,17,23,0.92) 0%, rgba(13,17,23,0.97) 100%);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(233,69,96,0.2);
+  padding: 10px 16px 12px;
+  z-index: 50;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 45%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#wp-panel.show { transform: translateY(0); }
+#wp-panel::-webkit-scrollbar { width: 4px; }
+#wp-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.wp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px; gap: 12px;
+}
+.wp-title {
+  font-size: 0.8em; font-weight: 600; color: var(--red);
+  display: flex; align-items: center; gap: 6px;
+}
+.wp-title .wp-icon { font-size: 1.1em; }
+.wp-stats {
+  display: flex; gap: 14px; font-size: 0.72em; color: var(--dim);
+}
+.wp-stats span { display: flex; align-items: center; gap: 4px; }
+.wp-stats .wp-done-count { color: var(--green); font-weight: 600; }
+.wp-stats .wp-running-count { color: var(--yellow); font-weight: 600; }
+.wp-toggle {
+  background: none; border: 1px solid var(--border); color: var(--dim);
+  font-size: 0.68em; padding: 2px 8px; border-radius: 4px; cursor: pointer;
+  transition: all 0.15s;
+}
+.wp-toggle:hover { color: var(--text); border-color: var(--dim); }
+
+.wp-overall {
+  height: 3px; border-radius: 2px;
+  background: rgba(255,255,255,0.06);
+  margin-bottom: 10px; overflow: hidden;
+}
+.wp-overall-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--red), var(--yellow), var(--green));
+  transition: width 0.5s ease-out;
+}
+
+.wp-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.wp-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+  transition: background 0.2s;
+}
+.wp-row:hover { background: rgba(255,255,255,0.05); }
+.wp-row.done { opacity: 0.6; }
+.wp-row.failed { opacity: 0.5; }
+
+.wp-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0; background: var(--dim);
+}
+.wp-dot.pending { background: var(--dim); }
+.wp-dot.running { background: var(--yellow); animation: pulse-dot 1.5s infinite; }
+.wp-dot.done { background: var(--green); }
+.wp-dot.failed { background: #e74c3c; }
+
+.wp-name {
+  font-size: 0.72em; color: var(--text); min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 0 90px;
+}
+
+.wp-bar-wrap {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); overflow: hidden;
+  min-width: 50px;
+}
+.wp-bar-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.4s ease-out, background 0.3s;
+}
+.wp-bar-fill.low { background: var(--red); }
+.wp-bar-fill.mid { background: var(--yellow); }
+.wp-bar-fill.high { background: var(--green); }
+
+.wp-pct {
+  font-size: 0.68em; color: var(--dim);
+  min-width: 32px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.wp-summary {
+  font-size: 0.65em; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hdr">
+    <div style="display:flex;align-items:center;gap:10px;"><span class="dot" id="cdot"></span><h1>Enterprise HQ</h1></div>
+    <div id="step-lbl"></div>
+    <div id="timer">0:00</div>
+  </header>
+  <div id="cv-wrap" style="position:relative;">
+    <canvas id="game" width="960" height="540"></canvas>
+    <div id="wp-panel">
+      <div class="wp-header">
+        <span class="wp-title"><span class="wp-icon">⚡</span>Worker Execution</span>
+        <div class="wp-stats">
+          <span>완료 <span class="wp-done-count" id="wp-done">0</span>/<span id="wp-total">0</span></span>
+          <span>실행 <span class="wp-running-count" id="wp-running">0</span></span>
+          <span>⏱ <span id="wp-elapsed">0:00</span></span>
+        </div>
+        <button class="wp-toggle" id="wp-toggle">접기</button>
+      </div>
+      <div class="wp-overall"><div class="wp-overall-fill" id="wp-overall-fill"></div></div>
+      <div class="wp-grid" id="wp-grid"></div>
+    </div>
+  </div>
+  <aside id="sb">
+    <h3>Activity Log</h3>
+    <div id="log-filters"></div>
+    <div id="log-wrap"><div id="log"></div></div>
+    <div id="org-panel"><h3>Organization</h3><div id="org"></div></div>
+  </aside>
+</div>
+
+<div class="ov" id="task-ov">
+  <div class="oc">
+    <div style="font-size:2.2em;margin-bottom:6px;line-height:1;">🏢</div>
+    <h2 style="font-size:1.45em;font-weight:700;letter-spacing:-0.02em;">Enterprise HQ</h2>
+    <p style="color:var(--dim);margin-bottom:18px;font-size:0.88em;letter-spacing:0.03em;">AI Corporate Simulation</p>
+    <textarea id="task-in" placeholder="작업을 지시해주세요&#10;예: 마케팅 전략을 수립해줘"></textarea>
+    <button class="bp" id="go-btn" style="padding:13px 40px;font-size:0.95em;margin-top:6px;">시작</button>
+  </div>
+</div>
+<div class="ov h" id="int-ov"><div class="oc" id="int-c"></div></div>
+<div class="ov h" id="done-ov"><div class="oc cc" id="done-c"></div></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════
+   §1  CONSTANTS
+   ═══════════════════════════════════════════════════ */
+const W = 960, H = 540;
+const WALK_SPEED = 2.2;
+const CORR_Y1 = 175, CORR_Y2 = 215, CORR_MID = 195;
+const VERT_X = 235;
+const LOBBY_ENTRY_Y = 395;
+const FPS_INTERVAL = 1000 / 60;
+const CORRIDOR_ENTRANCE_X = W + 30; /* Workers spawn off-screen right */
+
+/* ════════════════════════════════════════════════════
+   DESIGN TOKEN SYSTEM — Single Source of Truth
+   All colors referenced by semantic name, never inline hex.
+   Organized by: Structure → Furniture → Character → UI → FX
+   ════════════════════════════════════════════════════ */
+const C = {
+  /* ── Building Structure ── */
+  outerFloor: '#1A1A24',
+  corridor: '#D5C8B0',
+  corridorDark: '#4A4540',
+  corridorTile: '#3E3A32',
+  corridorBorder: '#2A2820',
+  corridorLight: '#AAA',
+  corridorDust: 'rgba(200,190,170,0.12)',
+  roomFloor: '#F0E8D8',
+  roomFloorDark: '#3A3830',
+  roomFloorDarkTile: '#32302A',
+  lobbyFloorLit: '#E8E0D0',
+  execFloor: '#F5EDE0',
+  execTile: '#EDE5D2',
+  /* leaderFloor/leaderTile removed — leader_office no longer exists */
+  roomTile: '#E8E0CE',
+  wall: '#8A7E6C',
+  wallDark: '#3A3630',
+  wallInner: '#B0A494',
+  door: '#C8BB9F',
+  doorDark: '#4A4540',
+  carpet: '#BFB09A',
+  roomLabel: '#7A7060',
+  roomLabelDark: '#4A4840',
+  ceilingLight: '#DDD',
+  ceilingGlow: 'rgba(255,240,200,0.2)',
+  warmGlowInner: 'rgba(255,240,200,0.06)',
+  domainBadgeBg: 'rgba(0,0,0,0.5)',
+  elevator: '#2A2820',
+  elevatorInner: '#4A4840',
+  elevatorDoor: '#333',
+  lobbyFloor: '#2A4A5A',
+  lobbyAccent: '#5A2020',
+  reception: '#5A4A30',
+
+  /* ── Furniture ── */
+  desk: '#A0845C',
+  deskDark: '#7A6440',
+  deskOff: '#5A4A30',      /* unlit desk fallback */
+  deskTopOff: '#3A3020',   /* unlit desk surface */
+  monitor: '#2A2A2A',
+  monitorOff: '#1A1A1A',
+  screen: '#4488CC',
+  screenGlow: '#5599DD',
+  screenOff: '#1A1A2A',
+  screenAlt: '#88BBEE',     /* breakroom screen */
+  screenAltOff: '#2A3A4A',
+  chair: '#555',
+  chairDark: '#2A2A2A',
+  chairOff: '#222',
+  whiteboard: '#F0F0F0',
+  whiteboardDark: '#3A3A3A',
+  sofa: '#6A5A4A',
+  sofaOff: '#2A2420',
+  bookshelf: '#B89860',
+  phone: '#333',
+  phoneBtn: '#666',
+  phoneBtnOff: '#2A2A2A',
+  phoneGlow: '#44DD44',
+  trophy: '#B8963A',
+  trophyLabel: '#FFF',
+  boardSticky: ['#C25050','#5080C0','#50A050'],   /* whiteboard sticky notes */
+  boardStickyOff: ['#3A2020','#202A3A','#203020'],
+  nameplate: '#B89860',
+  nameplateOff: '#4A3820',
+  medal: '#FFD93D',
+  certificate: '#DDD',
+
+  /* ── Plants ── */
+  plant: '#5A8A3A',
+  plantDark: '#2A4A1A',
+  plantDarker: '#1A3A0A',
+  pot: '#8B6C42',
+  potOff: '#3A2A1A',
+
+  /* ── Character Palettes ── */
+  skin: ['#FFDCB0','#F5D0A0','#E8C090','#D4A86C','#C49060'],
+  hair: ['#2A1A0A','#4A3020','#6A4530','#8A6A40','#3A2A2A','#1A1A2A','#AA8050','#7A3A2A','#B8860B'],
+  pants: ['#3A3A5A','#2A2A4A','#4A4A5A','#3A3A3A','#2A3A4A','#4A3A3A','#2A4A3A'],
+  shoe: ['#2A2A2A','#3A2020','#2A2A3A','#4A3A2A','#1A1A1A'],
+  eyes: '#333',
+  mouth: '#AA8070',
+  tie: '#C03030',
+  labCoat: '#F0F0F0',
+  glasses: '#555',
+  laptop: '#444',
+  laptopBase: '#555',
+
+  /* ── UI Elements (Canvas-drawn) ── */
+  progressBg: '#333',
+  progressLow: '#FF6B6B',   /* <30% */
+  progressMid: '#FFD93D',   /* 30-70% */
+  progressHigh: '#6BCB77',  /* >70% */
+  progressText: '#FFF',
+  nameShadow: 'rgba(0,0,0,0.6)',
+  nameText: '#FFF',
+  statusLabel: 'rgba(255,255,200,0.7)',
+  workDot: 'rgba(255,255,255,0.85)',
+  workDotShadow: 'rgba(0,0,0,0.2)',
+  dust: 'rgba(180,170,150,0.3)',
+
+  /* ── Speech Bubble ── */
+  bubbleBg: 'rgba(30,34,42,0.92)',
+  bubbleBorder: 'rgba(255,255,255,0.1)',
+  bubbleText: '#EEE',
+  bubbleArrow: 'rgba(30,34,42,0.92)',
+  bubbleArrowBorder: 'rgba(255,255,255,0.1)',
+
+  /* ── HUD / Scene ── */
+  hudBg: 'rgba(0,0,0,0.55)',
+  hudText: '#E0E0E0',
+  hudShadow: 'rgba(0,0,0,0.5)',
+  sceneLabel: '#FFF',
+  sceneShadow: 'rgba(0,0,0,0.5)',
+  lightFade: 'rgba(0,0,0,',  /* alpha appended dynamically */
+
+  /* ── Confetti ── */
+  confetti: ['#e94560','#2ecc71','#f39c12','#4A90D9','#9B59B6','#FF6B6B','#FFD93D','#6BCB77','#FF9FF3','#54A0FF'],
+
+  /* ── Clock (analog in reception) ── */
+  clockFace: '#888',
+  clockRing: '#333',
+  clockHand: '#333',
+};
+
+/* ═══════════════════════════════════════════════════
+   §2  OFFICE MAP — Rooms with lighting support
+   ═══════════════════════════════════════════════════ */
+const ROOMS = {
+  ceo_office:     { x:10,  y:10,  w:325, h:160, type:'executive',  label:'CEO Office',     doorSide:'bottom' },
+  mr_a:           { x:345, y:10,  w:155, h:160, type:'meeting',    label:'Meeting A',      doorSide:'bottom' },
+  mr_b:           { x:510, y:10,  w:155, h:160, type:'meeting',    label:'Meeting B',      doorSide:'bottom' },
+  mr_c:           { x:675, y:10,  w:155, h:160, type:'meeting',    label:'Meeting C',      doorSide:'bottom' },
+  boardroom:      { x:10,  y:220, w:280, h:170, type:'boardroom',  label:'Boardroom',      doorSide:'top' },
+  mr_d:           { x:300, y:220, w:155, h:170, type:'meeting',    label:'Meeting D',      doorSide:'top' },
+  mr_e:           { x:465, y:220, w:155, h:170, type:'meeting',    label:'Meeting E',      doorSide:'top' },
+  research_lab:   { x:630, y:220, w:200, h:170, type:'lab',        label:'Research Lab',   doorSide:'top' },
+  lobby:          { x:10,  y:395, w:580, h:135, type:'lobby',      label:'Lobby',          doorSide:'top' },
+  reception:      { x:600, y:395, w:230, h:135, type:'reception',  label:'Reception',      doorSide:'top' },
+};
+
+/* Break area (non-room decoration) */
+const BREAK_AREA = { x:840, y:10, w:110, h:160 };
+
+/* Compute door positions & center points */
+for (const [id, r] of Object.entries(ROOMS)) {
+  r.id = id;
+  r.cx = r.x + r.w / 2;
+  r.cy = r.y + r.h / 2;
+  if (r.doorSide === 'bottom') { r.doorX = r.cx; r.doorY = r.y + r.h; }
+  else { r.doorX = r.cx; r.doorY = r.y; }
+  r.slots = [];
+  r.slotIdx = 0;
+  r.lit = true;  /* All rooms lit — living office */
+}
+
+/* Generate character slots for each room type */
+function genSlots(r) {
+  const S = [];
+  if (r.type === 'executive') {
+    S.push({ x: r.x+65,  y: r.y+r.h/2+10, sitting:true }); /* CEO desk */
+    S.push({ x: r.x+150, y: r.y+40 });          /* visitor top-left */
+    S.push({ x: r.x+225, y: r.y+40 });          /* visitor top-right */
+    S.push({ x: r.x+150, y: r.y+r.h-35 });      /* visitor bottom-left */
+    S.push({ x: r.x+225, y: r.y+r.h-35 });      /* visitor bottom-right */
+    S.push({ x: r.x+290, y: r.y+r.h/2 });       /* standing far right */
+  } else if (r.type === 'leader') {
+    S.push({ x: r.x+50,  y: r.y+r.h/2+5, sitting:true });
+    S.push({ x: r.x+110, y: r.y+50 });
+    S.push({ x: r.x+110, y: r.y+r.h-40 });
+  } else if (r.type === 'meeting') {
+    const cx = r.cx, cy = r.cy;
+    S.push({ x:cx-30, y:cy-18, sitting:true }, { x:cx+30, y:cy-18, sitting:true });
+    S.push({ x:cx-30, y:cy+22, sitting:true }, { x:cx+30, y:cy+22, sitting:true });
+    S.push({ x:cx,    y:cy-28, sitting:true }, { x:cx,    y:cy+32, sitting:true });
+  } else if (r.type === 'boardroom') {
+    for (let i = 0; i < 6; i++) S.push({ x: r.x+35+i*42, y: r.cy-18, sitting:true });
+    for (let i = 0; i < 6; i++) S.push({ x: r.x+35+i*42, y: r.cy+22, sitting:true });
+  } else if (r.type === 'lab') {
+    for (let i = 0; i < 2; i++) S.push({ x: r.x+45+i*80, y: r.y+50, sitting:true });
+    for (let i = 0; i < 2; i++) S.push({ x: r.x+45+i*80, y: r.y+110, sitting:true });
+  } else if (r.type === 'lobby') {
+    /* Bottom row: below sofa zone (sofas at cy+18..cy+34, table at cy-6..cy+8) */
+    for (let i = 0; i < 8; i++) S.push({ x: r.x+40+i*68, y: r.cy+42 });
+    /* Top row: above sofa zone (sofas at cy-32..cy-16) — open corridor area */
+    for (let i = 0; i < 6; i++) S.push({ x: r.x+60+i*90, y: r.cy-42 });
+  } else if (r.type === 'reception') {
+    S.push({ x: r.x+60, y: r.cy-8 });
+    S.push({ x: r.x+130, y: r.cy+8 });
+    S.push({ x: r.x+190, y: r.cy });
+  }
+  r.slots = S;
+}
+for (const r of Object.values(ROOMS)) genSlots(r);
+
+/* ── Pathfinding ── */
+function buildPath(fromX, fromY, fromRoom, toRoomId) {
+  const to = ROOMS[toRoomId];
+  if (!to) return [{ x: fromX, y: fromY }];
+  const from = fromRoom ? ROOMS[fromRoom] : null;
+  const pts = [];
+
+  const isTopRow = (rm) => rm && rm.doorSide === 'bottom';
+  const isBotRow = (rm) => rm && rm.doorSide === 'top' && rm.y < 390;
+  const isLobbyRow = (rm) => rm && rm.y >= 390;
+
+  if (from && from.id === to.id) {
+    pts.push(nextSlot(to));
+    return pts;
+  }
+
+  /* Step 1: exit current room to corridor */
+  if (from) {
+    pts.push({ x: from.doorX, y: from.doorY });
+    if (isTopRow(from)) pts.push({ x: from.doorX, y: CORR_MID });
+    else if (isBotRow(from)) pts.push({ x: from.doorX, y: CORR_MID });
+    else if (isLobbyRow(from)) {
+      pts.push({ x: VERT_X, y: LOBBY_ENTRY_Y });
+      pts.push({ x: VERT_X, y: CORR_MID });
+    }
+  } else {
+    /* Entering from outside (e.g., workers from corridor edge) */
+    pts.push({ x: fromX, y: CORR_MID });
+  }
+
+  /* Step 2: walk along corridor to target door X */
+  if (isLobbyRow(to)) {
+    pts.push({ x: VERT_X, y: CORR_MID });
+    pts.push({ x: VERT_X, y: LOBBY_ENTRY_Y });
+    pts.push({ x: to.doorX, y: to.doorY });
+  } else {
+    pts.push({ x: to.doorX, y: CORR_MID });
+    pts.push({ x: to.doorX, y: to.doorY });
+  }
+
+  /* Step 3: walk to slot */
+  pts.push(nextSlot(to));
+  return pts;
+}
+
+function nextSlot(room) {
+  if (room.slots.length === 0) return { x: room.cx, y: room.cy };
+  const s = room.slots[room.slotIdx % room.slots.length];
+  room.slotIdx++;
+  return { x: s.x, y: s.y, sitting: s.sitting };
+}
+
+/* ═══════════════════════════════════════════════════
+   §3  CHARACTER — with phone_call state
+   ═══════════════════════════════════════════════════ */
+class Char {
+  constructor(id, name, color, role, gender) {
+    this.id = id;
+    this.name = name;
+    this.role = role || 'worker';
+    this.gender = gender || 'U'; // M, F, U(unknown)
+    this.shirt = color || '#888';
+    const h = hashStr(id);
+    this.skinIdx = h % C.skin.length;
+    this.hairIdx = (h >> 4) % C.hair.length;
+    this.pantsIdx = (h >> 8) % C.pants.length;
+    this.shoeIdx = (h >> 12) % C.shoe.length;
+    /* Gender-based hair style: 0=short crop, 1=side part, 2=buzz (M) / 3=long, 4=bob, 5=ponytail (F)
+       Use name-based hash for better distribution (id hash clusters for npc_* prefixes) */
+    const nameHash = hashStr(name + id);
+    this.hairStyle = this.gender === 'F' ? 3 + (nameHash % 3) : (nameHash % 3);
+    /* Per-character walk speed ±15% variation */
+    this.walkSpeed = WALK_SPEED * (0.85 + (((h >> 16) % 30) / 100));
+    this.x = 0; this.y = 0;
+    this.visible = false;
+    this.state = 'idle'; // idle, walking, sitting, typing, thinking, presenting, waiting, on_phone
+    this.path = [];
+    this.currentRoom = null;
+    this.progress = -1;
+    this.bubble = '';
+    this.bubbleExp = 0;
+    this.frame = 0;
+    this.destSlot = null;
+    this.facingRight = false;
+    this._phoneTimer = 0;      /* frames remaining for phone animation */
+    this._pendingPath = null;   /* path to walk after phone call ends */
+    this._pendingAction = null; /* action to apply after movement completes */
+    this._pendingBubble = null; /* bubble text for pending action */
+    this._destRoom = null;      /* room to set on arrival */
+    this._workLabel = '';       /* current work description for auto-cycling */
+    this.title = '';            /* job title: "Backend Developer", "Marketing Leader" */
+    this.domain = '';           /* domain: "engineering", "marketing" */
+    this._recentBubbles = [];   /* rolling buffer of last 5 bubbles */
+  }
+  /* Start autonomous work animation — cycles bubbles independently of backend */
+  startWork(label) {
+    this._workLabel = label || '';
+  }
+  stopWork() {
+    this._workLabel = '';
+  }
+  update() {
+    this.frame++;
+    if (this.bubbleExp && Date.now() > this.bubbleExp) { this.bubble = ''; this.bubbleExp = 0; }
+    /* Auto-cycle work bubble when label is set and no active bubble.
+       Per-character offset creates organic rhythm — characters don't all refresh at the same time. */
+    if (this._workLabel && !this.bubble && this.path.length === 0 && this.state !== 'on_phone' && this.state !== 'walking') {
+      const personalOffset = hashStr(this.id) % 90; /* 0-89 frame offset per character */
+      if ((this.frame + personalOffset) % 180 === 0) {
+        this.setBubble(this._workLabel, 2500 + (hashStr(this.id) % 1500)); /* 2.5-4s varied duration */
+      }
+    }
+
+    /* Phone call animation: wait, then walk */
+    if (this.state === 'on_phone') {
+      this._phoneTimer--;
+      if (this._phoneTimer <= 0) {
+        if (this._pendingPath) {
+          this.path = this._pendingPath;
+          this._pendingPath = null;
+        }
+        this.state = 'walking';
+      }
+      return;
+    }
+
+    if (this.path.length > 0) {
+      /* Leave source room once we start walking (corridor = null) */
+      if (this.state !== 'walking') this.currentRoom = null;
+      this.state = 'walking';
+      const t = this.path[0];
+      const spd = this.walkSpeed || WALK_SPEED;
+      const dx = t.x - this.x, dy = t.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dx > 1) this.facingRight = true;
+      else if (dx < -1) this.facingRight = false;
+      if (dist < spd + 0.5) {
+        this.x = t.x; this.y = t.y;
+        const wp = this.path.shift();
+        if (this.path.length === 0) {
+          this.state = (wp && wp.sitting) ? 'sitting' : 'idle';
+          this.destSlot = wp;
+          /* Mark arrival in destination room */
+          if (this._destRoom) { this.currentRoom = this._destRoom; this._destRoom = null; }
+          /* Apply queued action from movement period */
+          if (this._pendingAction) {
+            this.applyAction(this._pendingAction, this._pendingBubble);
+            this._pendingAction = null;
+            this._pendingBubble = null;
+          }
+        }
+      } else {
+        this.x += (dx / dist) * spd;
+        this.y += (dy / dist) * spd;
+      }
+    }
+  }
+  moveTo(roomId) {
+    /* Preserve current work state so it resumes after arrival */
+    if (this._workLabel && !this._pendingAction) {
+      const reverseMap = {sitting:'reading', typing:'writing', thinking:'reviewing', presenting:'presenting', waiting:'waiting'};
+      this._pendingAction = reverseMap[this.state] || this.state;
+      this._pendingBubble = this._workLabel;
+    }
+    const pts = buildPath(this.x, this.y, this.currentRoom, roomId);
+    this.path = pts;
+    this._destRoom = roomId;
+    this.stopWork(); /* Stop work animation while moving */
+  }
+  phoneAndMoveTo(roomId) {
+    /* Show phone animation for ~60 frames (1 sec), then walk to target */
+    const pts = buildPath(this.x, this.y, this.currentRoom, roomId);
+    this.state = 'on_phone';
+    this._phoneTimer = 60;
+    this._pendingPath = pts;
+    this._destRoom = roomId;
+    this.setBubble('전화 수신 중...', 1500);
+  }
+  applyAction(action, detail) {
+    if (this.path.length > 0 || this.state === 'on_phone') {
+      /* Queue for when movement/phone finishes */
+      this._pendingAction = action;
+      this._pendingBubble = detail || null;
+      return;
+    }
+    const map = { reading:'sitting', writing:'typing', reviewing:'thinking', researching:'thinking', waiting:'waiting', presenting:'presenting', alert:'idle' };
+    this.state = map[action] || action || 'idle';
+    if (detail) {
+      this.setBubble(detail, 4000);
+      this.startWork(detail); /* Keep cycling this label independently */
+    }
+    if (action === 'idle' || action === 'alert') this.stopWork();
+  }
+  setAction(action) { this.applyAction(action, null); }
+  setBubble(text, dur) {
+    this.bubble = (text||'').substring(0, 30); this.bubbleExp = Date.now() + (dur||3000);
+    if (text) {
+      this._recentBubbles.push(text);
+      if (this._recentBubbles.length > 5) this._recentBubbles.shift();
+    }
+  }
+}
+
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return Math.abs(h); }
+
+/* ═══════════════════════════════════════════════════
+   §3.5  NPC AMBIENT SYSTEM — Living Office
+   ═══════════════════════════════════════════════════ */
+const NPC_CONFIG = {
+  WANDER_DWELL_MIN: 300,    // 5s @60fps
+  WANDER_DWELL_MAX: 900,    // 15s
+  AMBIENT_ACTION_CHANCE: 0.6,
+  ALERT_FRAMES: 48,          // 0.8s
+  DISMISS_DELAY: 600,        // 10s before wandering resumes after task complete
+};
+
+const AMBIENT_ACTIONS = [
+  ['\u2615 커피 타임', 'idle', 240],
+  ['\uD83D\uDCF1 폰 확인 중', 'idle', 180],       /* idle (on_phone conflicts with Char.update timer) */
+  ['\uD83D\uDCAC 잡담 중...', 'idle', 300],
+  ['\uD83D\uDCD6 읽는 중', 'sitting', 360],
+  ['\uD83D\uDE46 스트레칭', 'idle', 120],
+  ['\uD83D\uDCAD 생각 중...', 'thinking', 240],
+  ['\uD83D\uDCCB 메모 중', 'typing', 180],
+  ['\uD83C\uDFB5 콧노래~', 'idle', 150],
+  ['\uD83D\uDCE7 메일 확인', 'typing', 200],
+  ['\uD83E\uDD14 자료 검토', 'thinking', 300],
+  ['\uD83D\uDC4B 인사 중', 'idle', 100],
+  ['\uD83D\uDCDD 보고서 작성', 'typing', 360],
+  ['\uD83E\uDD71 하품...', 'idle', 90],
+  ['\uD83D\uDCDE 통화 중', 'thinking', 240],       /* thinking (person focused on call) */
+  ['\uD83D\uDCCA 차트 분석', 'sitting', 300],
+  ['\uD83C\uDF75 차 한잔', 'idle', 200],
+];
+
+const NPC_WANDER_ROOMS = [
+  { id: 'lobby', weight: 4 },
+  { id: 'reception', weight: 2 },
+  { id: 'boardroom', weight: 1 },
+  { id: 'mr_a', weight: 1 },
+  { id: 'mr_b', weight: 1 },
+  { id: 'mr_d', weight: 1 },
+  { id: 'mr_e', weight: 1 },
+];
+
+const BREAK_WAYPOINTS = [
+  { x: 860, y: CORR_MID - 5 },
+  { x: 880, y: CORR_MID + 5 },
+  { x: 850, y: CORR_MID },
+];
+
+/* Tier 2: Leader NPC (5, named with domain mapping) */
+const LEADER_NPC_POOL = [
+  { id: 'npc_eng', name: 'Engineering Leader', color: '#E67E22', emoji: '\uD83D\uDC68\u200D\uD83D\uDCBB',
+    domain: 'engineering', mapTo: 'engineering_leader', gender: 'M' },
+  { id: 'npc_mkt', name: 'Marketing Leader', color: '#E74C3C', emoji: '\uD83D\uDCE2',
+    domain: 'marketing', mapTo: 'marketing_leader', gender: 'F' },
+  { id: 'npc_data', name: 'Data Leader', color: '#2ECC71', emoji: '\uD83D\uDCCA',
+    domain: 'data', mapTo: 'data_leader', gender: 'M' },
+  { id: 'npc_prod', name: 'Product Leader', color: '#E91E63', emoji: '\uD83C\uDFAF',
+    domain: 'product', mapTo: 'product_leader', gender: 'F' },
+  { id: 'npc_fin', name: 'Finance Leader', color: '#F39C12', emoji: '\uD83D\uDCB0',
+    domain: 'finance', mapTo: 'finance_leader', gender: 'F' },
+];
+
+/* Tier 3: Anonymous NPC (8, named employees with gender variety) */
+const ANON_NPC_POOL = [
+  { id: 'npc_a1', name: '민서현', color: '#889', gender: 'F' },
+  { id: 'npc_a2', name: '이태민', color: '#778', gender: 'M' },
+  { id: 'npc_a3', name: '구하늘', color: '#998', gender: 'F' },
+  { id: 'npc_a4', name: '양준호', color: '#7A8', gender: 'M' },
+  { id: 'npc_a5', name: '조유라', color: '#8A9', gender: 'F' },
+  { id: 'npc_a6', name: '탁성준', color: '#798', gender: 'M' },
+  { id: 'npc_a7', name: '윤다은', color: '#879', gender: 'F' },
+  { id: 'npc_a8', name: '허재원', color: '#899', gender: 'M' },
+];
+
+/* ─── NPCManager: orchestrates wandering, recruitment, dismissal ─── */
+class NPCManager {
+  constructor(engine) {
+    this.engine = engine;
+    this._npcs = new Map();         // npcId → NPCState
+    this._recruitedMap = new Map(); // backendCharId → npcId
+  }
+
+  /* ── Initialize all NPC tiers ── */
+  initAll() {
+    const allRoomIds = Object.keys(ROOMS);
+
+    /* Tier 0: User character */
+    this._initNpc('user', 0, {
+      name: 'You', color: '#5DADE2', emoji: '\uD83D\uDE4B', role: 'user', gender: 'U',
+    }, 'lobby');
+
+    /* Tier 1: CEO + Dr.Choi are already spawned — just register them */
+    this._registerTier1('ceo', 'ceo_office');
+    this._registerTier1('deep_researcher', 'research_lab');
+
+    /* Tier 2: Leader NPCs */
+    const leaderRooms = ['lobby', 'reception', 'boardroom', 'mr_a', 'mr_b'];
+    for (let i = 0; i < LEADER_NPC_POOL.length; i++) {
+      const lp = LEADER_NPC_POOL[i];
+      this._initNpc(lp.id, 2, {
+        name: lp.name, color: lp.color, emoji: lp.emoji, role: 'npc',
+        domain: lp.domain, mapTo: lp.mapTo, gender: lp.gender,
+      }, leaderRooms[i % leaderRooms.length]);
+    }
+
+    /* Tier 3: Anonymous NPCs */
+    const anonRooms = ['lobby', 'lobby', 'reception', 'mr_d', 'mr_e', 'lobby', 'boardroom', 'lobby'];
+    for (let i = 0; i < ANON_NPC_POOL.length; i++) {
+      const ap = ANON_NPC_POOL[i];
+      this._initNpc(ap.id, 3, {
+        name: ap.name, color: ap.color, emoji: '', role: 'npc', gender: ap.gender,
+      }, anonRooms[i % anonRooms.length]);
+    }
+  }
+
+  _initNpc(npcId, tier, charData, startRoom) {
+    const room = ROOMS[startRoom] || ROOMS.lobby;
+    const slot = nextSlot(room);
+    const ch = new Char(npcId, charData.name, charData.color, charData.role || 'npc', charData.gender);
+    ch.emoji = charData.emoji || '';
+    ch.domain = charData.domain || '';
+    ch.x = slot.x; ch.y = slot.y;
+    ch.currentRoom = room.id;
+    ch.visible = true;
+    /* Randomize initial facing */
+    ch.facingRight = Math.random() > 0.5;
+    this.engine.chars.set(npcId, ch);
+
+    this._npcs.set(npcId, {
+      charId: npcId,
+      tier,
+      npcState: 'npc_idle',
+      dwellTimer: NPC_CONFIG.WANDER_DWELL_MIN + Math.floor(Math.random() * (NPC_CONFIG.WANDER_DWELL_MAX - NPC_CONFIG.WANDER_DWELL_MIN)),
+      ambientAction: null,     // { label, framesLeft }
+      recruitedAsId: null,     // backend character ID when recruited
+      originalName: charData.name,
+      originalColor: charData.color,
+      originalEmoji: charData.emoji || '',
+      originalRole: charData.role || 'npc',
+      originalGender: charData.gender || 'U',
+      originalHairStyle: null,  // set after Char creation
+      homeRoom: startRoom,
+      mapTo: charData.mapTo || null,
+      domain: charData.domain || '',
+    });
+    /* Capture hairStyle after Char constructor computed it */
+    const createdCh = this.engine.chars.get(npcId);
+    if (createdCh) this._npcs.get(npcId).originalHairStyle = createdCh.hairStyle;
+  }
+
+  _registerTier1(charId, homeRoom) {
+    const ch = this.engine.chars.get(charId);
+    if (!ch) return;
+    this._npcs.set(charId, {
+      charId,
+      tier: 1,
+      npcState: 'npc_idle',
+      dwellTimer: NPC_CONFIG.WANDER_DWELL_MIN + Math.floor(Math.random() * 300),
+      ambientAction: null,
+      recruitedAsId: null,
+      originalName: ch.name,
+      originalColor: ch.shirt,
+      originalEmoji: ch.emoji,
+      originalRole: ch.role,
+      originalGender: ch.gender || 'U',
+      originalHairStyle: ch.hairStyle,
+      homeRoom,
+      mapTo: null,
+      domain: ch.domain || '',
+    });
+  }
+
+  /* ── Per-frame update ── */
+  update() {
+    for (const [npcId, state] of this._npcs) {
+      const ch = this.engine.chars.get(npcId);
+      if (!ch || !ch.visible) continue;
+
+      if (state.npcState === 'npc_idle') {
+        this._updateWandering(ch, state);
+      } else if (state.npcState === 'npc_alerting') {
+        state.dwellTimer--;
+        if (state.dwellTimer <= 0) {
+          /* Alert done → phone + walk to target */
+          state.npcState = 'npc_walking';
+          if (state._recruitTarget) {
+            ch.phoneAndMoveTo(state._recruitTarget);
+          }
+        }
+      } else if (state.npcState === 'npc_walking') {
+        /* Wait until character reaches destination */
+        if (ch.path.length === 0 && ch.state !== 'on_phone') {
+          state.npcState = 'recruited';
+        }
+      } else if (state.npcState === 'npc_dismissing') {
+        /* Wait until character returns to wander area */
+        if (ch.path.length === 0 && ch.state !== 'on_phone') {
+          state.npcState = 'npc_idle';
+          state.dwellTimer = NPC_CONFIG.WANDER_DWELL_MIN + Math.floor(Math.random() * (NPC_CONFIG.WANDER_DWELL_MAX - NPC_CONFIG.WANDER_DWELL_MIN));
+          /* Restore original identity (including gender/hair from before recruit) */
+          ch.name = state.originalName;
+          ch.shirt = state.originalColor;
+          ch.emoji = state.originalEmoji;
+          ch.role = state.originalRole;
+          ch.gender = state.originalGender;
+          ch.hairStyle = state.originalHairStyle;
+          ch._backendId = null;
+          ch.stopWork();
+          ch.progress = -1;
+        }
+      }
+      /* recruited state: do nothing, controlled by choreography */
+    }
+  }
+
+  /* ── Wandering AI ── */
+  _updateWandering(ch, state) {
+    /* Skip if character is moving */
+    if (ch.path.length > 0 || ch.state === 'on_phone') return;
+
+    /* Ambient action in progress */
+    if (state.ambientAction) {
+      state.ambientAction.framesLeft--;
+      if (state.ambientAction.framesLeft <= 0) {
+        ch.state = 'idle';
+        ch.bubble = ''; ch.bubbleExp = 0;
+        ch.stopWork();
+        state.ambientAction = null;
+        state.dwellTimer = NPC_CONFIG.WANDER_DWELL_MIN / 2 + Math.floor(Math.random() * NPC_CONFIG.WANDER_DWELL_MIN);
+      }
+      return;
+    }
+
+    /* Dwell countdown */
+    state.dwellTimer--;
+    if (state.dwellTimer > 0) return;
+
+    /* Time to do something */
+    if (Math.random() < NPC_CONFIG.AMBIENT_ACTION_CHANCE) {
+      /* 20% chance: paired chat — find another idle NPC in same room */
+      if (Math.random() < 0.2 && ch.currentRoom) {
+        const partner = this._findIdleNpcInRoom(ch.currentRoom, ch.id);
+        if (partner) {
+          const pState = this._npcs.get(partner.id);
+          const chatMsgs = ['💬 잡담 중...','🤝 회의 중','💡 아이디어 교환','📋 업무 상담'];
+          const msg = chatMsgs[Math.floor(Math.random() * chatMsgs.length)];
+          const frames = 300 + Math.floor(Math.random() * 180);
+          /* Both NPCs face each other */
+          ch.facingRight = partner.x > ch.x;
+          partner.facingRight = ch.x > partner.x;
+          state.ambientAction = { label: msg, framesLeft: frames };
+          ch.state = 'idle'; ch.setBubble(msg, (frames/60)*1000 + 500);
+          if (pState && pState.npcState === 'npc_idle' && !pState.ambientAction) {
+            pState.ambientAction = { label: msg, framesLeft: frames };
+            partner.state = 'idle'; partner.setBubble(msg, (frames/60)*1000 + 500);
+          }
+          state.dwellTimer = 0;
+          return;
+        }
+      }
+      /* Start a solo ambient action */
+      const action = AMBIENT_ACTIONS[Math.floor(Math.random() * AMBIENT_ACTIONS.length)];
+      const [label, animState, frames] = action;
+      state.ambientAction = { label, framesLeft: frames };
+      ch.state = animState;
+      ch.setBubble(label, (frames / 60) * 1000 + 500);
+    } else {
+      /* Move to a new room */
+      const targetRoom = this._pickWanderRoom(ch.currentRoom, state);
+      if (targetRoom && targetRoom !== ch.currentRoom) {
+        /* 15% chance to visit break area instead */
+        if (Math.random() < 0.15 && state.tier >= 2) {
+          const wp = BREAK_WAYPOINTS[Math.floor(Math.random() * BREAK_WAYPOINTS.length)];
+          ch.path = [{ x: ch.x, y: CORR_MID }, { x: wp.x, y: wp.y }];
+          ch.state = 'walking';
+          ch.currentRoom = null;
+          ch._destRoom = null;
+        } else {
+          ch.moveTo(targetRoom);
+        }
+      }
+    }
+    /* Reset dwell timer for after arrival */
+    state.dwellTimer = NPC_CONFIG.WANDER_DWELL_MIN + Math.floor(Math.random() * (NPC_CONFIG.WANDER_DWELL_MAX - NPC_CONFIG.WANDER_DWELL_MIN));
+  }
+
+  _pickWanderRoom(currentRoom, state) {
+    let rooms;
+    if (state.tier === 0) {
+      rooms = [{ id: 'lobby', weight: 4 }, { id: 'reception', weight: 2 }];
+    } else if (state.tier === 1 && state.charId === 'ceo') {
+      rooms = [{ id: 'ceo_office', weight: 5 }, { id: 'lobby', weight: 2 }, { id: 'boardroom', weight: 2 }];
+    } else if (state.tier === 1 && state.charId === 'deep_researcher') {
+      rooms = [{ id: 'research_lab', weight: 5 }, { id: 'lobby', weight: 2 }];
+    } else {
+      rooms = NPC_WANDER_ROOMS;
+    }
+    /* Filter out current room to force movement, then weighted random */
+    const available = rooms.filter(r => r.id !== currentRoom);
+    if (available.length === 0) return currentRoom;
+    const totalWeight = available.reduce((s, r) => s + r.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const r of available) {
+      roll -= r.weight;
+      if (roll <= 0) return r.id;
+    }
+    return available[available.length - 1].id;
+  }
+
+  /* Find another idle NPC in the same room (for paired chat) */
+  _findIdleNpcInRoom(roomId, excludeId) {
+    for (const [npcId, st] of this._npcs) {
+      if (npcId === excludeId) continue;
+      if (st.npcState !== 'npc_idle' || st.ambientAction) continue;
+      const ch = this.engine.chars.get(npcId);
+      if (ch && ch.visible && ch.currentRoom === roomId && ch.path.length === 0) return ch;
+    }
+    return null;
+  }
+
+  /* ── Recruitment: intercept char_spawn ── */
+  tryRecruit(charData, spawnAt) {
+    const backendId = charData.id;
+    /* Don't recruit if already exists as a real character */
+    if (this.engine.chars.has(backendId) && !this._npcs.has(backendId)) return false;
+    /* Don't re-recruit */
+    if (this._recruitedMap.has(backendId)) return false;
+
+    /* Try Tier 2 match: leader NPC with matching mapTo */
+    let matchedNpcId = null;
+    if (charData.role === 'leader') {
+      /* Exact domain match first */
+      for (const [npcId, state] of this._npcs) {
+        if (state.tier === 2 && state.npcState === 'npc_idle' && state.mapTo === backendId) {
+          matchedNpcId = npcId;
+          break;
+        }
+      }
+      /* Fallback: any idle Tier 2 */
+      if (!matchedNpcId) {
+        for (const [npcId, state] of this._npcs) {
+          if (state.tier === 2 && state.npcState === 'npc_idle') {
+            matchedNpcId = npcId;
+            break;
+          }
+        }
+      }
+    }
+
+    /* Tier 3 match: any idle anonymous NPC for workers */
+    if (!matchedNpcId && (charData.role === 'worker' || !matchedNpcId)) {
+      for (const [npcId, state] of this._npcs) {
+        if (state.tier === 3 && state.npcState === 'npc_idle') {
+          matchedNpcId = npcId;
+          break;
+        }
+      }
+    }
+
+    if (!matchedNpcId) return false; /* No available NPCs, fall through to normal spawn */
+
+    this._doRecruit(matchedNpcId, backendId, charData, spawnAt);
+    return true;
+  }
+
+  _doRecruit(npcId, backendId, charData, spawnAt) {
+    const state = this._npcs.get(npcId);
+    const ch = this.engine.chars.get(npcId);
+    if (!state || !ch) return;
+
+    /* Stop current activity */
+    ch.path = [];
+    ch.stopWork();
+    ch.state = 'idle';
+    ch.bubble = ''; ch.bubbleExp = 0;
+    if (state.ambientAction) state.ambientAction = null;
+
+    /* Alert phase */
+    state.npcState = 'npc_alerting';
+    state.dwellTimer = NPC_CONFIG.ALERT_FRAMES;
+    state._recruitTarget = spawnAt || charData.home_room || 'lobby';
+    state.recruitedAsId = backendId;
+    ch.setBubble('\u2757', 800);
+
+    /* After alert, update identity */
+    setTimeout(() => {
+      if (state.npcState !== 'npc_alerting' && state.npcState !== 'npc_walking') return;
+      /* Transform: update name, color, role, gender, id to match backend character */
+      ch.name = charData.name || state.originalName;
+      /* Workers get brightness variation like _spawnChar does */
+      let color = charData.color || state.originalColor;
+      if (charData.role === 'worker') {
+        const hh = hashStr(backendId);
+        const shift = ((hh % 5) - 2) * 15;
+        color = SimRenderer._shiftColor(color, shift);
+      }
+      ch.shirt = color;
+      ch.emoji = charData.emoji || state.originalEmoji;
+      ch.role = charData.role || 'worker';
+      ch.title = charData.title || '';
+      ch.domain = charData.domain || state.domain;
+      /* Update gender + recalculate hairStyle for correct visual */
+      if (charData.gender) {
+        ch.gender = charData.gender;
+        const nameHash = hashStr(ch.name + backendId);
+        ch.hairStyle = ch.gender === 'F' ? 3 + (nameHash % 3) : (nameHash % 3);
+      }
+      /* Store backend ID so accessories and worker-specific rendering works */
+      ch._backendId = backendId;
+      /* Dual registration: backend ID points to same Char object */
+      this.engine.chars.set(backendId, ch);
+      this._recruitedMap.set(backendId, npcId);
+    }, (NPC_CONFIG.ALERT_FRAMES / 60) * 1000);
+  }
+
+  /* ── Resolve backend ID → actual Char ── */
+  resolveChar(backendId) {
+    const npcId = this._recruitedMap.get(backendId);
+    if (npcId) return this.engine.chars.get(npcId);
+    return null;
+  }
+
+  /* ── Dismiss all recruited NPCs back to wandering ── */
+  dismissAll() {
+    for (const [backendId, npcId] of this._recruitedMap) {
+      const state = this._npcs.get(npcId);
+      const ch = this.engine.chars.get(npcId);
+      if (!state || !ch) continue;
+
+      /* Clean up dual registration */
+      this.engine.chars.delete(backendId);
+
+      /* Return to wander after delay */
+      state.npcState = 'npc_dismissing';
+      state.recruitedAsId = null;
+
+      /* Staggered return to various rooms */
+      const returnRooms = ['lobby', 'reception', 'lobby', 'boardroom', 'lobby'];
+      const targetRoom = returnRooms[Math.floor(Math.random() * returnRooms.length)];
+      setTimeout(() => {
+        if (state.npcState === 'npc_dismissing') {
+          ch.stopWork();
+          ch.progress = -1;
+          ch.state = 'idle';
+          ch.moveTo(targetRoom);
+        }
+      }, 1000 + Math.random() * 2000); /* 1-3s stagger */
+    }
+    this._recruitedMap.clear();
+  }
+
+  /* ── Tier 0: User character state changes ── */
+  activateUser(phase) {
+    const state = this._npcs.get('user');
+    const ch = this.engine.chars.get('user');
+    if (!state || !ch) return;
+    if (phase === 'task_start') {
+      state.npcState = 'recruited';
+      ch.moveTo('ceo_office');
+      ch.setBubble('\uc758\ub8b0 \uc811\uc218 \uc911...', 3000);
+    } else if (phase === 'completion') {
+      ch.moveTo('boardroom');
+      ch.setBubble('\uBE0C\uB9AC\uD551 \uCC38\uC11D', 3000);
+    } else if (phase === 'idle') {
+      state.npcState = 'npc_idle';
+      state.dwellTimer = NPC_CONFIG.WANDER_DWELL_MIN;
+    }
+  }
+
+  /* ── Tier 1: CEO/Dr.Choi activation ── */
+  activateTier1(charId) {
+    const state = this._npcs.get(charId);
+    if (!state) return;
+    const ch = this.engine.chars.get(charId);
+    if (!ch) return;
+    state.npcState = 'recruited';
+    /* Stop wandering, return home */
+    if (state.ambientAction) {
+      state.ambientAction = null;
+      ch.state = 'idle';
+      ch.bubble = ''; ch.bubbleExp = 0;
+    }
+    if (ch.currentRoom !== state.homeRoom) {
+      ch.moveTo(state.homeRoom);
+    }
+  }
+
+  deactivateTier1(charId) {
+    const state = this._npcs.get(charId);
+    if (!state) return;
+    state.npcState = 'npc_idle';
+    state.dwellTimer = NPC_CONFIG.WANDER_DWELL_MIN + Math.floor(Math.random() * 300);
+  }
+
+  /* ── Check if an NPC is in idle wander state (for choreography guard) ── */
+  isNpcIdle(charId) {
+    const state = this._npcs.get(charId);
+    return state && state.npcState === 'npc_idle';
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════
+   §4  GAME ENGINE — PixiJS 8 WebGL rendering
+   ═══════════════════════════════════════════════════ */
+
+/* Parse 'rgba(r,g,b,a)' → { color: 0xRRGGBB, alpha } for PixiJS fill */
+function _parseRGBA(str) {
+  if (!str || typeof str !== 'string') return null;
+  const m = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+  if (!m) return null;
+  return { color: (parseInt(m[1]) << 16) | (parseInt(m[2]) << 8) | parseInt(m[3]), alpha: m[4] !== undefined ? parseFloat(m[4]) : 1 };
+}
+
+/* Pre-cached constants for per-frame rendering */
+const _WORKING_STATES = new Set(['thinking', 'typing', 'sitting', 'waiting', 'presenting']);
+const _BUBBLE_BG_PARSED = _parseRGBA(C.bubbleBg) || { color: 0x1E222A, alpha: 0.92 };
+
+class Engine {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.chars = new Map();
+    this.litRooms = new Set();
+    this._lightLevels = new Map();
+    this._lightTargets = new Map();
+    this._ambientLight = 0.65; /* Idle rooms: visible but noticeably dimmer than active */
+    for (const id of Object.keys(ROOMS)) {
+      this._lightLevels.set(id, this._ambientLight);
+      this._lightTargets.set(id, this._ambientLight);
+    }
+    this._sceneFade = 0;
+    this._confetti = [];
+    this._roomDomains = new Map();
+    this._sceneLabel = '';
+    this._sceneLabelAlpha = 0;
+    this._hudLabel = '';
+    this._errorFade = 0;
+    this.frame = 0;
+    this.running = true;
+    this._lastTime = 0;
+    this._loop = this._loop.bind(this);
+    this._pixiReady = false;
+    this._charContainers = new Map();
+    this._prevHud = '';
+    this._prevSceneLabel = '';
+    this._pinnedBubbles = new Set();  /* Phase 3: pinned bubble char IDs */
+    this._highlightChar = null;       /* Phase 3: character ID to highlight */
+    this._highlightAlpha = 0;         /* Phase 3: highlight glow alpha */
+    this._highlightScale = 0;         /* Phase 3: highlight glow radius scale */
+    /* Phase 4A: Zoom / Pan state */
+    this._zoom = 1;
+    this._panX = 0;
+    this._panY = 0;
+    this._zoomResetAnim = null;      /* Zoom reset animation frame ID */
+    this._zoomRAF = null;            /* Wheel zoom RAF throttle ID */
+    this._zoomHintShown = false;     /* Show keyboard hint once on first zoom */
+    this._zoomHintTimer = null;
+    this._initPixi(canvas);
+    requestAnimationFrame(this._loop);
+  }
+
+  async _initPixi(canvas) {
+    if (typeof PIXI === 'undefined') {
+      console.warn('[Engine] PixiJS not loaded — falling back to blank canvas');
+      this._pixiReady = false;
+      return;
+    }
+    try {
+    const dpr = window.devicePixelRatio || 1;
+    this.app = new PIXI.Application();
+    await this.app.init({
+      canvas,
+      width: W,
+      height: H,
+      resolution: dpr,
+      autoDensity: true,
+      background: C.outerFloor,
+      antialias: false,
+    });
+    /* Stop PixiJS internal ticker — we use our own RAF loop */
+    this.app.ticker.stop();
+
+    /* ── Scene graph layers ── */
+    this.worldContainer = new PIXI.Container();  /* Phase 4A: zoom/pan target */
+    this.bgLayer = new PIXI.Container();
+    this.roomLayer = new PIXI.Container();
+    this.furnLayer = new PIXI.Container();
+    this.lightLayer = new PIXI.Container();
+    this.charLayer = new PIXI.Container();
+    this.particleLayer = new PIXI.Container();
+    this.uiLayer = new PIXI.Container();
+    /* World layers inside worldContainer (affected by zoom/pan) */
+    this.worldContainer.addChild(
+      this.bgLayer, this.roomLayer, this.furnLayer,
+      this.lightLayer, this.charLayer, this.particleLayer
+    );
+    /* Stage holds worldContainer + uiLayer (uiLayer is zoom-independent) */
+    this.app.stage.addChild(this.worldContainer, this.uiLayer);
+    this.charLayer.sortableChildren = true;
+
+    /* ── Build static background ── */
+    this._buildStaticBg();
+
+    /* ── Per-frame dynamic Graphics ── */
+    this._corrDynGfx = new PIXI.Graphics();
+    this.bgLayer.addChild(this._corrDynGfx);
+    this._roomGfx = new PIXI.Graphics();
+    this.roomLayer.addChild(this._roomGfx);
+    this._furnGfx = new PIXI.Graphics();
+    this.furnLayer.addChild(this._furnGfx);
+    this._confettiGfx = new PIXI.Graphics();
+    this.particleLayer.addChild(this._confettiGfx);
+    this._fxGfx = new PIXI.Graphics();
+    this.uiLayer.addChild(this._fxGfx);
+    this._highlightGfx = new PIXI.Graphics();
+    this.uiLayer.addChild(this._highlightGfx);
+
+    /* ── Light overlays per room ── */
+    this._lightOverlays = new Map();
+    for (const [id, r] of Object.entries(ROOMS)) {
+      const g = new PIXI.Graphics();
+      g.rect(r.x, r.y, r.w, r.h).fill({ color: 0x0D0D14 });
+      g.alpha = (1 - (this._lightLevels.get(id) || 0)) * 0.85;
+      this.lightLayer.addChild(g);
+      this._lightOverlays.set(id, g);
+    }
+
+    /* ── Room labels (pre-created Text objects) ── */
+    this._roomLabelTexts = new Map();
+    const rlStyle = { fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 10, fontWeight: 'bold' };
+    for (const [id, r] of Object.entries(ROOMS)) {
+      const t = new PIXI.Text({ text: r.label, style: { ...rlStyle, fill: r.id === 'ceo_office' ? C.roomLabel : C.roomLabelDark } });
+      t.anchor.set(0.5, 0);
+      t.x = r.cx; t.y = r.y + 5;
+      this.roomLayer.addChild(t);
+      this._roomLabelTexts.set(id, t);
+    }
+
+    /* ── Domain badge texts (meeting rooms) ── */
+    this._domainBadgeTexts = new Map();
+    this._domainBadgeBgs = new Map();
+
+    /* ── Furniture label texts ── */
+    this._furnLabelTexts = new Map();
+    /* CEO plaque */
+    const ceoPlaque = new PIXI.Text({ text: 'CEO', style: { fontFamily: 'sans-serif', fontSize: 6, fontWeight: 'bold', fill: C.trophyLabel } });
+    ceoPlaque.anchor.set(0.5, 0.5); ceoPlaque.visible = false;
+    this.furnLayer.addChild(ceoPlaque);
+    this._furnLabelTexts.set('ceo_plaque', ceoPlaque);
+    /* Leader plaque */
+    const leaderPlaque = new PIXI.Text({ text: 'LEADER', style: { fontFamily: 'sans-serif', fontSize: 6, fontWeight: 'bold', fill: C.trophyLabel } });
+    leaderPlaque.anchor.set(0.5, 0.5); leaderPlaque.visible = false;
+    this.furnLayer.addChild(leaderPlaque);
+    this._furnLabelTexts.set('leader_plaque', leaderPlaque);
+    /* Reception plaque */
+    const recPlaque = new PIXI.Text({ text: 'RECEPTION', style: { fontFamily: 'sans-serif', fontSize: 6, fill: C.glasses } });
+    recPlaque.anchor.set(0.5, 0.5); recPlaque.visible = false;
+    this.furnLayer.addChild(recPlaque);
+    this._furnLabelTexts.set('reception_plaque', recPlaque);
+
+    /* ── UI elements ── */
+    this._hudBg = new PIXI.Graphics();
+    this._hudText = new PIXI.Text({ text: '', style: { fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 10, fill: C.hudText } });
+    this._hudText.y = H - 19; this._hudText.x = 13;
+    this._hudBg.visible = false; this._hudText.visible = false;
+    this.uiLayer.addChild(this._hudBg, this._hudText);
+
+    this._sceneLabelBg = new PIXI.Graphics();
+    this._sceneLabelText = new PIXI.Text({ text: '', style: { fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 14, fontWeight: 'bold', fill: C.medal } });
+    this._sceneLabelText.anchor.set(0.5, 0.5);
+    this._sceneLabelText.x = W / 2; this._sceneLabelText.y = H / 2;
+    this._sceneLabelBg.visible = false; this._sceneLabelText.visible = false;
+    this.uiLayer.addChild(this._sceneLabelBg, this._sceneLabelText);
+
+    const wm = new PIXI.Text({ text: 'ENTERPRISE HQ', style: { fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 9, fontWeight: 'bold', fill: 0xFFFFFF } });
+    wm.anchor.set(1, 1); wm.x = W - 10; wm.y = H - 6; wm.alpha = 0.08;
+    this.uiLayer.addChild(wm);
+
+    /* ── Phase 4A: Minimap + Zoom indicator ── */
+    this._minimapGfx = new PIXI.Graphics();
+    this.uiLayer.addChild(this._minimapGfx);
+
+    this._zoomText = new PIXI.Text({ text: '', style: {
+      fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 12, fontWeight: 'bold', fill: 0xFFFFFF,
+    }});
+    this._zoomText.anchor.set(1, 0);
+    this._zoomText.x = W - 12; this._zoomText.y = 8;
+    this._zoomText.alpha = 0.7; this._zoomText.visible = false;
+    this._zoomText.eventMode = 'static'; this._zoomText.cursor = 'pointer';
+    this._zoomText.on('pointerdown', () => {
+      /* Click zoom indicator to reset */
+      if (this._zoom > 1.001) {
+        this._zoom = 1; this._panX = 0; this._panY = 0;
+        if (this._interactionMgr) this._interactionMgr._updateCursor();
+      }
+    });
+    this.uiLayer.addChild(this._zoomText);
+
+    /* Minimap label */
+    this._minimapLabel = new PIXI.Text({ text: 'MINIMAP', style: {
+      fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 8, fontWeight: '600',
+      fill: 0x8B949E, letterSpacing: 1.5,
+    }});
+    this._minimapLabel.anchor.set(0, 1);
+    this._minimapLabel.x = W - 160 - 10; this._minimapLabel.y = H - 90 - 10 - 3;
+    this._minimapLabel.alpha = 0.5;
+    this.uiLayer.addChild(this._minimapLabel);
+
+    /* ── Responsive ── */
+    this._resizeCanvas();
+    this._resizeObserver = new ResizeObserver(() => this._resizeCanvas());
+    this._resizeObserver.observe(canvas.parentElement);
+
+    this._pixiReady = true;
+
+    /* ── WebGL context loss resilience ── */
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this._pixiReady = false;
+      console.warn('[Engine] WebGL context lost — pausing render');
+      this._showContextLostBanner();
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      console.info('[Engine] WebGL context restored — resuming');
+      this._pixiReady = true;
+      this._hideContextLostBanner();
+    });
+    } catch (err) {
+      console.error('[Engine] PixiJS init failed:', err);
+      this._pixiReady = false;
+    }
+  }
+
+  _showContextLostBanner() {
+    if (document.getElementById('webgl-lost-banner')) return;
+    const b = document.createElement('div');
+    b.id = 'webgl-lost-banner';
+    b.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:120;padding:20px 32px;background:rgba(13,17,23,0.95);border:1px solid var(--red);border-radius:12px;text-align:center;color:var(--text);font-size:0.9em;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+    const icon = document.createElement('div');
+    icon.style.cssText = 'font-size:1.6em;margin-bottom:8px;';
+    icon.textContent = '\u26A0\uFE0F';
+    b.appendChild(icon);
+    const msg = document.createElement('div');
+    msg.textContent = '\uADF8\uB798\uD53D \uCEE8\uD14D\uC2A4\uD2B8\uAC00 \uB04A\uACBC\uC2B5\uB2C8\uB2E4';
+    b.appendChild(msg);
+    const sub = document.createElement('span');
+    sub.style.cssText = 'font-size:0.8em;color:var(--dim);';
+    sub.textContent = '\uC790\uB3D9 \uBCF5\uAD6C \uB300\uAE30 \uC911...';
+    b.appendChild(sub);
+    document.body.appendChild(b);
+  }
+
+  _hideContextLostBanner() {
+    const b = document.getElementById('webgl-lost-banner');
+    if (b) { b.style.opacity = '0'; b.style.transition = 'opacity .3s'; setTimeout(() => b.remove(), 300); }
+  }
+
+  _resizeCanvas() {
+    const parent = this.cv.parentElement;
+    const containerW = parent.clientWidth;
+    const containerH = parent.clientHeight;
+    const scale = Math.min(containerW / W, containerH / H);
+    this.cv.style.width = Math.floor(W * scale) + 'px';
+    this.cv.style.height = Math.floor(H * scale) + 'px';
+  }
+
+  setLitRooms(rooms) {
+    this.litRooms.clear();
+    for (const r of rooms) this.litRooms.add(r);
+    for (const id of Object.keys(ROOMS)) {
+      this._lightTargets.set(id, this.litRooms.has(id) ? 1 : this._ambientLight);
+    }
+  }
+
+  _updateLights() {
+    const LERP = 0.08;
+    for (const [id, level] of this._lightLevels) {
+      const target = this._lightTargets.get(id) || 0;
+      if (Math.abs(level - target) > 0.01) {
+        this._lightLevels.set(id, level + (target - level) * LERP);
+      } else if (level !== target) {
+        this._lightLevels.set(id, target);
+      }
+    }
+  }
+
+  triggerSceneFlash() { this._sceneFade = 1; }
+
+  setSceneLabel(text) {
+    this._sceneLabel = text || '';
+    this._sceneLabelAlpha = 1.3;
+  }
+
+  triggerConfetti() {
+    const colors = C.confetti;
+    for (let i = 0; i < 80; i++) {
+      this._confetti.push({
+        x: Math.random() * W, y: -10 - Math.random() * 40,
+        vx: (Math.random() - 0.5) * 3, vy: Math.random() * 2 + 1.5,
+        size: Math.random() * 4 + 2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360, rotSpeed: (Math.random() - 0.5) * 8,
+        life: 180 + Math.floor(Math.random() * 120),
+      });
+    }
+  }
+
+  _loop(ts) {
+    if (!this.running) return;
+    requestAnimationFrame(this._loop);
+    if (ts - this._lastTime < FPS_INTERVAL) return;
+    this._lastTime = ts;
+    this.frame++;
+    this._updateLights();
+    for (const c of this.chars.values()) c.update();
+    if (this._npcManager) this._npcManager.update();
+    if (this._pixiReady) this._render();
+  }
+
+  _render() {
+    /* Phase 4A: Apply zoom/pan to world container */
+    this.worldContainer.scale.set(this._zoom);
+    this.worldContainer.position.set(this._panX, this._panY);
+
+    /* Light overlays — update alpha */
+    for (const [id, overlay] of this._lightOverlays) {
+      const lvl = this._lightLevels.get(id) || 0;
+      overlay.alpha = (1 - lvl) * 0.85;
+    }
+    /* Room label colors */
+    for (const [id, t] of this._roomLabelTexts) {
+      const lvl = this._lightLevels.get(id) || 0;
+      t.style.fill = lvl > 0.05 ? C.roomLabel : C.roomLabelDark;
+    }
+
+    this._renderCorridorDynamic();
+    this._renderRooms();
+    this._renderChars();
+    this._renderConfetti();
+    this._renderUI();
+
+    /* Manual render (we stopped PixiJS ticker) */
+    try { this.app.render(); } catch (err) {
+      /* Suppress render errors during WebGL context recovery */
+      if (this._pixiReady) console.warn('[Engine] Render error:', err.message);
+    }
+  }
+
+  /* ═════════════════════════════════════════════════
+     STATIC BACKGROUND (built once)
+     ═════════════════════════════════════════════════ */
+  _buildStaticBg() {
+    const g = new PIXI.Graphics();
+
+    /* ── Horizontal main corridor ── */
+    g.rect(10, CORR_Y1, W - 20, CORR_Y2 - CORR_Y1).fill(C.corridorDark);
+    for (let x = 10; x < W - 10; x += 40) {
+      if (((x / 40) & 1) === 0) g.rect(x, CORR_Y1, 40, CORR_Y2 - CORR_Y1).fill(C.corridorTile);
+    }
+    /* Vertical connector */
+    g.rect(215, CORR_Y2, 40, LOBBY_ENTRY_Y - CORR_Y2).fill(C.corridorDark);
+    for (let y = CORR_Y2; y < LOBBY_ENTRY_Y; y += 40) {
+      if (((y / 40) & 1) === 0) g.rect(215, y, 40, 40).fill(C.corridorTile);
+    }
+    /* Corridor borders */
+    g.rect(10, CORR_Y1, W - 20, CORR_Y2 - CORR_Y1).stroke({ color: C.corridorBorder, width: 1 });
+    g.rect(215, CORR_Y2, 40, LOBBY_ENTRY_Y - CORR_Y2).stroke({ color: C.corridorBorder, width: 1 });
+    /* Ceiling light fixtures (static part) */
+    for (let lx = 60; lx < W - 30; lx += 120) {
+      g.rect(lx - 3, CORR_Y1, 6, 3).fill(C.corridorLight);
+    }
+
+    /* ── Break area ── */
+    const ba = BREAK_AREA;
+    g.rect(ba.x, ba.y, ba.w, ba.h).fill(C.elevator);
+    g.rect(ba.x, ba.y, ba.w, ba.h).stroke({ color: C.wallDark, width: 2 });
+    g.rect(ba.x + 10, ba.y + 45, 28, 40).fill(C.elevatorDoor);
+    g.rect(ba.x + 14, ba.y + 49, 20, 18).fill(C.lobbyFloor);
+    g.rect(ba.x + 14, ba.y + 71, 20, 8).fill(C.lobbyAccent);
+    g.rect(ba.x + 55, ba.y + 65, 28, 18).fill(C.deskOff);
+    this._drawPlantOnGfx(g, ba.x + 85, ba.y + 45, false);
+
+    this.bgLayer.addChild(g);
+
+    /* Break area label */
+    const breakLbl = new PIXI.Text({ text: 'Break', style: { fontFamily: 'sans-serif', fontSize: 9, fontWeight: 'bold', fill: C.elevatorInner } });
+    breakLbl.anchor.set(0.5, 0); breakLbl.x = ba.x + ba.w / 2; breakLbl.y = ba.y + 5;
+    this.bgLayer.addChild(breakLbl);
+  }
+
+  /* ═════════════════════════════════════════════════
+     CORRIDOR DYNAMIC (per-frame: pulse, dust, clock)
+     ═════════════════════════════════════════════════ */
+  _renderCorridorDynamic() {
+    const g = this._corrDynGfx;
+    g.clear();
+    /* Ceiling light pulse */
+    const pulse = 0.12 + Math.sin(this.frame * 0.015) * 0.03;
+    for (let lx = 60; lx < W - 30; lx += 120) {
+      g.circle(lx, CORR_MID, 18).fill({ color: 0xFFDCA0, alpha: pulse });
+    }
+    /* Dust motes */
+    for (let i = 0; i < 5; i++) {
+      const seed = (this.frame * 0.3 + i * 173) % (W - 40);
+      const mx = 30 + seed;
+      const my = CORR_Y1 + 5 + Math.sin(this.frame * 0.008 + i * 2.5) * 12;
+      g.circle(mx, my, 1.2).fill({ color: 0xC8BEAA, alpha: 0.12 });
+    }
+    /* Analog clock */
+    const ba = BREAK_AREA;
+    g.circle(ba.x + 30, CORR_Y1 + 8, 7).fill(C.clockFace);
+    g.circle(ba.x + 30, CORR_Y1 + 8, 7).stroke({ color: C.clockRing, width: 1 });
+    const now = new Date();
+    const hA = (now.getHours() % 12 + now.getMinutes() / 60) * Math.PI / 6 - Math.PI / 2;
+    const mA = now.getMinutes() * Math.PI / 30 - Math.PI / 2;
+    g.moveTo(ba.x + 30, CORR_Y1 + 8).lineTo(ba.x + 30 + Math.cos(hA) * 3.5, CORR_Y1 + 8 + Math.sin(hA) * 3.5).stroke({ color: C.clockHand, width: 1 });
+    g.moveTo(ba.x + 30, CORR_Y1 + 8).lineTo(ba.x + 30 + Math.cos(mA) * 5, CORR_Y1 + 8 + Math.sin(mA) * 5).stroke({ color: C.clockHand, width: 1 });
+  }
+
+  /* ═════════════════════════════════════════════════
+     ROOMS + FURNITURE (per-frame redraw)
+     ═════════════════════════════════════════════════ */
+  _renderRooms() {
+    const rg = this._roomGfx;
+    const fg = this._furnGfx;
+    rg.clear();
+    fg.clear();
+    /* Reset furniture label visibility */
+    for (const t of this._furnLabelTexts.values()) t.visible = false;
+    /* Reset domain badge visibility */
+    for (const t of this._domainBadgeTexts.values()) t.visible = false;
+    for (const g of this._domainBadgeBgs.values()) g.visible = false;
+
+    for (const r of Object.values(ROOMS)) {
+      const level = this._lightLevels.get(r.id) || 0;
+      const lit = level > 0.05;
+      this._drawRoom(rg, r, lit);
+      this._drawFurniture(fg, r, lit);
+    }
+  }
+
+  _drawRoom(g, r, lit) {
+    /* Floor */
+    if (lit) {
+      const fc = r.type === 'lobby' ? C.lobbyFloorLit : r.type === 'executive' ? C.execFloor : C.roomFloor;
+      g.rect(r.x, r.y, r.w, r.h).fill(fc);
+      const tc = r.type === 'executive' ? C.execTile : C.roomTile;
+      for (let tx = r.x; tx < r.x + r.w; tx += 32) {
+        for (let ty = r.y; ty < r.y + r.h; ty += 32) {
+          if (((tx / 32 + ty / 32) & 1) === 0) g.rect(tx, ty, 32, 32).fill(tc);
+        }
+      }
+    } else {
+      g.rect(r.x, r.y, r.w, r.h).fill(C.roomFloorDark);
+      for (let tx = r.x; tx < r.x + r.w; tx += 32) {
+        for (let ty = r.y; ty < r.y + r.h; ty += 32) {
+          if (((tx / 32 + ty / 32) & 1) === 0) g.rect(tx, ty, 32, 32).fill(C.roomFloorDarkTile);
+        }
+      }
+    }
+    /* Walls */
+    g.rect(r.x, r.y, r.w, r.h).stroke({ color: lit ? C.wall : C.wallDark, width: 3 });
+    if (lit) {
+      g.moveTo(r.x + 1, r.y + r.h).lineTo(r.x + 1, r.y + 1).lineTo(r.x + r.w, r.y + 1).stroke({ color: C.wallInner, width: 1 });
+    }
+    /* Door */
+    const dw = 28;
+    if (r.doorSide === 'bottom') g.rect(r.doorX - dw / 2, r.y + r.h - 2, dw, 5).fill(lit ? C.door : C.doorDark);
+    else g.rect(r.doorX - dw / 2, r.y - 2, dw, 5).fill(lit ? C.door : C.doorDark);
+    /* Domain badge */
+    const domainTag = this._roomDomains.get(r.id);
+    if (lit && domainTag && (r.type === 'meeting' || r.type === 'boardroom')) {
+      let bt = this._domainBadgeTexts.get(r.id);
+      if (!bt) {
+        bt = new PIXI.Text({ text: '', style: { fontFamily: 'sans-serif', fontSize: 8, fontWeight: 'bold', fill: C.medal } });
+        bt.anchor.set(0.5, 0.5);
+        this.roomLayer.addChild(bt);
+        this._domainBadgeTexts.set(r.id, bt);
+        const bg = new PIXI.Graphics();
+        this.roomLayer.addChild(bg);
+        this._domainBadgeBgs.set(r.id, bg);
+        /* Ensure text is above bg */
+        this.roomLayer.setChildIndex(bt, this.roomLayer.children.length - 1);
+      }
+      bt.text = domainTag; bt.visible = true;
+      bt.x = r.cx; bt.y = r.y + r.h - 10;
+      const bg = this._domainBadgeBgs.get(r.id);
+      bg.clear();
+      const tagW = bt.width + 8;
+      bg.roundRect(r.cx - tagW / 2, r.y + r.h - 16, tagW, 12, 3).fill({ color: 0x000000, alpha: 0.5 });
+      bg.visible = true;
+    }
+    /* Ceiling light when lit */
+    if (lit) {
+      g.rect(r.cx - 8, r.y + 2, 16, 3).fill(C.ceilingLight);
+      g.circle(r.cx, r.y + 8, 12).fill({ color: 0xFFF0C8, alpha: 0.2 });
+    }
+  }
+
+  /* ── Furniture dispatch ── */
+  _drawFurniture(g, r, lit) {
+    switch (r.type) {
+      case 'executive': this._furnExec(g, r, lit); break;
+      case 'leader': this._furnLeader(g, r, lit); break;
+      case 'meeting': this._furnMeeting(g, r, lit); break;
+      case 'boardroom': this._furnBoard(g, r, lit); break;
+      case 'lab': this._furnLab(g, r, lit); break;
+      case 'lobby': this._furnLobby(g, r, lit); break;
+      case 'reception': this._furnReception(g, r, lit); break;
+    }
+  }
+
+  _furnExec(g, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    const mn = lit ? C.monitor : C.monitorOff;
+    const flick = lit && (this.frame % 120 < 4);
+    const sc = lit ? (flick ? C.screenGlow : C.screen) : C.screenOff;
+    /* Desk */
+    g.rect(r.x + 28, r.cy - 16, 70, 32).fill(dk);
+    g.rect(r.x + 28, r.cy + 14, 70, 4).fill(lit ? C.deskDark : C.deskTopOff);
+    /* Monitor */
+    g.rect(r.x + 42, r.cy - 26, 22, 14).fill(mn);
+    g.rect(r.x + 44, r.cy - 24, 18, 10).fill(sc);
+    g.rect(r.x + 51, r.cy - 12, 8, 4).fill(mn);
+    /* Laptop */
+    g.rect(r.x + 40, r.cy - 2, 28, 7).fill(lit ? C.laptop : C.chairOff);
+    /* Bookshelf */
+    g.rect(r.x + 5, r.y + 22, 12, 50).fill(dk);
+    const stk = lit ? C.boardSticky : C.boardStickyOff;
+    g.rect(r.x + 7, r.y + 26, 8, 8).fill(stk[0]);
+    g.rect(r.x + 7, r.y + 36, 8, 8).fill(stk[1]);
+    g.rect(r.x + 7, r.y + 46, 8, 10).fill(stk[2]);
+    this._drawPlantOnGfx(g, r.x + r.w - 25, r.y + 30, lit);
+    /* Nameplate */
+    g.rect(r.x + 48, r.cy + 4, 14, 3).fill(lit ? C.nameplate : C.nameplateOff);
+    /* Visitor chairs — spread for leader gatherings */
+    g.circle(r.x + 150, r.y + 42, 6).fill(lit ? C.chair : C.chairDark);
+    g.circle(r.x + 225, r.y + 42, 6).fill(lit ? C.chair : C.chairDark);
+    g.circle(r.x + 150, r.y + r.h - 33, 6).fill(lit ? C.chair : C.chairDark);
+    g.circle(r.x + 225, r.y + r.h - 33, 6).fill(lit ? C.chair : C.chairDark);
+    /* CEO plaque */
+    if (lit) {
+      g.rect(r.x + r.w / 2 - 18, r.y + 3, 36, 8).fill(C.trophy);
+      const t = this._furnLabelTexts.get('ceo_plaque');
+      t.x = r.cx; t.y = r.y + 7; t.visible = true;
+    }
+  }
+
+  _furnLeader(g, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    const mn = lit ? C.monitor : C.monitorOff;
+    const sc = lit ? C.screen : C.screenOff;
+    g.rect(r.x + 20, r.cy - 12, 55, 28).fill(dk);
+    g.rect(r.x + 20, r.cy + 14, 55, 3).fill(lit ? C.deskDark : C.deskTopOff);
+    g.rect(r.x + 32, r.cy - 22, 18, 12).fill(mn);
+    g.rect(r.x + 34, r.cy - 20, 14, 8).fill(sc);
+    g.rect(r.x + 30, r.cy, 24, 6).fill(lit ? C.laptop : C.chairOff);
+    /* Phone */
+    g.rect(r.x + 62, r.cy - 6, 8, 12).fill(lit ? C.phone : C.monitorOff);
+    g.rect(r.x + 60, r.cy - 8, 12, 4).fill(lit ? C.phoneBtn : C.phoneBtnOff);
+    /* Chair */
+    g.circle(r.x + 110, r.cy, 5).fill(lit ? C.chair : C.chairDark);
+    this._drawPlantOnGfx(g, r.x + r.w - 18, r.y + 25, lit);
+    if (lit) {
+      g.rect(r.x + r.w / 2 - 22, r.y + 3, 44, 8).fill(C.trophy);
+      const t = this._furnLabelTexts.get('leader_plaque');
+      t.x = r.cx; t.y = r.y + 7; t.visible = true;
+    }
+  }
+
+  _furnMeeting(g, r, lit) {
+    const cx = r.cx, cy = r.cy;
+    const dk = lit ? C.desk : C.deskOff;
+    g.roundRect(cx - 30, cy - 12, 60, 24, 4).fill(dk);
+    g.roundRect(cx - 28, cy + 10, 56, 3, 2).fill(lit ? C.deskDark : C.deskTopOff);
+    const cc = lit ? C.chair : C.chairDark;
+    for (const [dx, dy] of [[-35, -7], [-35, 7], [35, -7], [35, 7], [0, -20], [0, 20]]) {
+      g.circle(cx + dx, cy + dy, 5).fill(cc);
+    }
+    g.rect(cx - 26, r.y + 4, 52, 4).fill(lit ? C.whiteboard : C.whiteboardDark);
+  }
+
+  _furnBoard(g, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    g.roundRect(r.x + 25, r.cy - 10, r.w - 50, 20, 5).fill(dk);
+    const cc = lit ? C.chair : C.chairDark;
+    const nChairs = Math.max(5, Math.floor((r.w - 60) / 34));
+    const spacing = (r.w - 80) / (nChairs - 1);
+    for (let i = 0; i < nChairs; i++) {
+      const x = r.x + 40 + i * spacing;
+      g.circle(x, r.cy - 18, 4).fill(cc);
+      g.circle(x, r.cy + 18, 4).fill(cc);
+    }
+    g.rect(r.cx - 35, r.y + 4, 70, 5).fill(lit ? C.whiteboard : C.whiteboardDark);
+    this._drawPlantOnGfx(g, r.x + r.w - 18, r.y + r.h - 28, lit);
+  }
+
+  _furnLab(g, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    const mn = lit ? C.monitor : C.monitorOff;
+    const sc = lit ? ((this.frame + 60) % 120 < 4 ? C.screenGlow : C.screen) : C.screenOff;
+    for (let i = 0; i < 2; i++) {
+      const dx = r.x + 30 + i * 80;
+      g.rect(dx, r.y + 38, 42, 18).fill(dk);
+      g.rect(dx + 12, r.y + 28, 16, 12).fill(mn);
+      g.rect(dx + 14, r.y + 30, 12, 8).fill(sc);
+      g.rect(dx, r.y + 98, 42, 18).fill(dk);
+      g.rect(dx + 12, r.y + 88, 16, 12).fill(mn);
+      g.rect(dx + 14, r.y + 90, 12, 8).fill(lit ? C.screenGlow : C.screenOff);
+    }
+    this._drawPlantOnGfx(g, r.x + r.w - 18, r.y + 25, lit);
+  }
+
+  _furnLobby(g, r, lit) {
+    const sofa = lit ? C.sofa : C.sofaOff;
+    g.roundRect(r.x + 30, r.cy - 32, 80, 16, 4).fill(sofa);
+    g.roundRect(r.x + 30, r.cy + 18, 80, 16, 4).fill(sofa);
+    g.roundRect(r.x + 48, r.cy - 6, 40, 14, 3).fill(lit ? C.desk : C.deskTopOff);
+    this._drawPlantOnGfx(g, r.x + 20, r.y + 18, lit);
+    this._drawPlantOnGfx(g, r.x + r.w - 20, r.y + 18, lit);
+    /* Water cooler */
+    g.rect(r.x + r.w - 48, r.y + 18, 12, 18).fill(lit ? C.certificate : C.laptop);
+    g.rect(r.x + r.w - 46, r.y + 20, 8, 8).fill(lit ? C.screenAlt : C.screenAltOff);
+  }
+
+  _furnReception(g, r, lit) {
+    const dk = lit ? C.desk : C.deskOff;
+    g.roundRect(r.x + 25, r.cy - 4, 80, 18, 4).fill(dk);
+    g.rect(r.x + 48, r.cy - 16, 18, 13).fill(lit ? C.monitor : C.monitorOff);
+    g.rect(r.x + 50, r.cy - 14, 14, 9).fill(lit ? C.screen : C.screenOff);
+    g.circle(r.x + 140, r.cy + 10, 5).fill(lit ? C.chair : C.chairDark);
+    g.circle(r.x + 165, r.cy + 10, 5).fill(lit ? C.chair : C.chairDark);
+    this._drawPlantOnGfx(g, r.x + r.w - 20, r.y + 22, lit);
+    if (lit) {
+      g.rect(r.x + 120, r.y + 5, 45, 6).fill(C.nameplate);
+      const t = this._furnLabelTexts.get('reception_plaque');
+      t.x = r.x + 142; t.y = r.y + 8; t.visible = true;
+    }
+  }
+
+  /* ═════════════════════════════════════════════════
+     CHARACTERS (per-frame, Y-sorted)
+     ═════════════════════════════════════════════════ */
+  _renderChars() {
+    const visible = [...this.chars.values()].filter(c => c.visible);
+    /* Remove containers for non-visible / removed chars */
+    for (const [id, cont] of this._charContainers) {
+      const ch = this.chars.get(id);
+      if (!ch || !ch.visible) {
+        this.charLayer.removeChild(cont);
+        cont.destroy({ children: true });
+        this._charContainers.delete(id);
+      }
+    }
+    for (const ch of visible) {
+      let cont = this._charContainers.get(ch.id);
+      if (!cont) {
+        cont = new PIXI.Container();
+        /* Body sub-container: mirrored for facingRight */
+        cont._body = new PIXI.Container();
+        cont._bodyGfx = new PIXI.Graphics();
+        cont._body.addChild(cont._bodyGfx);
+        /* Non-mirrored overlay graphics (dust, laptop, working dots) */
+        cont._overlayGfx = new PIXI.Graphics();
+        /* Pre-create text objects (not mirrored) */
+        cont._nameText = new PIXI.Text({ text: '', style: { fontFamily: '"Segoe UI", system-ui, sans-serif', fontSize: 9, fill: C.nameText } });
+        cont._nameText.anchor.set(0.5, 0);
+        cont._statusText = new PIXI.Text({ text: '', style: { fontFamily: 'sans-serif', fontSize: 7, fill: 0xFFFFCC } });
+        cont._statusText.anchor.set(0.5, 0); cont._statusText.alpha = 0.7; cont._statusText.visible = false;
+        cont._progressGfx = new PIXI.Graphics();
+        cont._progressText = new PIXI.Text({ text: '', style: { fontFamily: 'sans-serif', fontSize: 7, fontWeight: 'bold', fill: C.progressText } });
+        cont._progressText.anchor.set(0.5, 0); cont._progressText.visible = false;
+        cont._progressGfx.visible = false;
+        cont._bubbleGfx = new PIXI.Graphics();
+        cont._bubbleText = new PIXI.Text({ text: '', style: { fontFamily: 'sans-serif', fontSize: 9, fill: C.bubbleText } });
+        cont._bubbleText.anchor.set(0.5, 0); cont._bubbleText.visible = false;
+        cont._bubbleGfx.visible = false;
+        cont.addChild(cont._body, cont._overlayGfx, cont._progressGfx, cont._progressText, cont._bubbleGfx, cont._bubbleText, cont._nameText, cont._statusText);
+        this.charLayer.addChild(cont);
+        this._charContainers.set(ch.id, cont);
+      }
+      cont.zIndex = ch.y;
+      this._drawChar(cont, ch);
+    }
+  }
+
+  _drawChar(cont, ch) {
+    const bg = cont._bodyGfx;
+    const og = cont._overlayGfx;
+    bg.clear();
+    og.clear();
+    const x = ch.x, y = ch.y;
+    const S = 1.8;
+    const f = ch.frame;
+
+    /* Room lighting alpha */
+    const inRoom = ch.currentRoom && ROOMS[ch.currentRoom];
+    const roomLight = inRoom ? (this._lightLevels.get(ch.currentRoom) || 0) : 1;
+    cont.alpha = inRoom ? (0.35 + roomLight * 0.65) : 1;
+
+    const skin = C.skin[ch.skinIdx];
+    const hair = C.hair[ch.hairIdx];
+    const pants = C.pants[ch.pantsIdx];
+    const shoe = C.shoe[ch.shoeIdx || 0];
+    const isSitting = ch.state === 'sitting' || ch.state === 'typing';
+    const isOnPhone = ch.state === 'on_phone';
+
+    /* Idle breathing offset — per-character amplitude for organic feel */
+    let breathY = 0;
+    if (ch.state !== 'walking' && ch.state !== 'on_phone') {
+      const breathAmp = 0.4 + (hashStr(ch.id) % 5) * 0.1; /* 0.4 ~ 0.8 */
+      const breathSpd = 0.018 + (hashStr(ch.id) % 4) * 0.002; /* 0.018 ~ 0.024 */
+      breathY = Math.sin(f * breathSpd + hashStr(ch.id) * 0.1) * breathAmp;
+    }
+    const by = y + breathY;
+
+    /* FacingRight mirror: body sub-container mirrors around character X.
+       Body is drawn at absolute coords; mirror is achieved by:
+       1. Set pivot to ch.x so scale flips around that point
+       2. Scale X to -1  */
+    cont._body.pivot.set(x, 0);
+    cont._body.position.set(x, 0);
+    cont._body.scale.set(ch.facingRight ? -1 : 1, 1);
+
+    /* ── BODY graphics (inside mirrored container) ── */
+    const g = bg;
+
+    /* Shadow */
+    g.ellipse(x, by + 2, 8 * S, 3 * S).fill({ color: 0x000000, alpha: 0.15 });
+
+    const legBase = by - 12 * S;
+    const isSkirt = ch.gender === 'F' && (hashStr(ch.id + 'skirt') % 2 === 0); /* ~50% of F characters */
+    if (!isSitting) {
+      if (isSkirt) {
+        /* Skirt — A-line trapezoid + narrower legs underneath */
+        g.poly([x - 5*S, legBase, x + 5*S, legBase, x + 4*S, legBase + 5*S, x - 4*S, legBase + 5*S]).fill(pants);
+        if (ch.state === 'walking') {
+          const swing = Math.sin(f * 0.2) * 3 * S;
+          g.rect(x - 2*S, legBase + 5*S, 2*S, 4*S + swing).fill(skin);
+          g.rect(x, legBase + 5*S, 2*S, 4*S - swing).fill(skin);
+          g.rect(x - 2.5*S, legBase + 9*S + swing, 3*S, 2*S).fill(shoe);
+          g.rect(x - 0.5*S, legBase + 9*S - swing, 3*S, 2*S).fill(shoe);
+        } else {
+          g.rect(x - 2*S, legBase + 5*S, 2*S, 4*S).fill(skin);
+          g.rect(x, legBase + 5*S, 2*S, 4*S).fill(skin);
+          g.rect(x - 2.5*S, legBase + 9*S, 3*S, 2*S).fill(shoe);
+          g.rect(x - 0.5*S, legBase + 9*S, 3*S, 2*S).fill(shoe);
+        }
+      } else if (ch.state === 'walking') {
+        const swing = Math.sin(f * 0.2) * 4 * S;
+        g.rect(x - 3 * S, legBase, 2.5 * S, 9 * S + swing).fill(pants);
+        g.rect(x + 0.5 * S, legBase, 2.5 * S, 9 * S - swing).fill(pants);
+        g.rect(x - 3.5 * S, legBase + 9 * S + swing, 3.5 * S, 2 * S).fill(shoe);
+        g.rect(x - 0.5 * S, legBase + 9 * S - swing, 3.5 * S, 2 * S).fill(shoe);
+      } else {
+        g.rect(x - 3 * S, legBase, 2.5 * S, 9 * S).fill(pants);
+        g.rect(x + 0.5 * S, legBase, 2.5 * S, 9 * S).fill(pants);
+        g.rect(x - 3.5 * S, legBase + 9 * S, 3.5 * S, 2 * S).fill(shoe);
+        g.rect(x - 0.5 * S, legBase + 9 * S, 3.5 * S, 2 * S).fill(shoe);
+      }
+    }
+
+    /* Torso */
+    const bodyY = isSitting ? by - 8 * S : by - 22 * S;
+    const bodyH = isSitting ? 10 * S : 11 * S;
+    g.roundRect(x - 5.5 * S, bodyY, 11 * S, bodyH, 2 * S).fill(ch.shirt);
+    g.rect(x - 1.5 * S, bodyY, 3 * S, 2 * S).fill(skin);
+    /* Per-character clothing variety (collar, belt, pocket — hash-based) */
+    const _clothH = hashStr(ch.id + 'cloth');
+    const _collarType = _clothH % 5; /* 0=plain, 1=V-neck, 2=buttons, 3=collar, 4=turtleneck */
+    if (_collarType === 1) {
+      /* V-neck opening */
+      g.moveTo(x - 2*S, bodyY).lineTo(x, bodyY + 3.5*S).lineTo(x + 2*S, bodyY).stroke({ color: skin, width: 1.5 });
+    } else if (_collarType === 2) {
+      /* Button-up shirt dots */
+      for (let _bi = 0; _bi < 3; _bi++) g.circle(x, bodyY + 2*S + _bi*2.2*S, 0.7*S).fill('#DDD');
+    } else if (_collarType === 3) {
+      /* Folded collar flaps */
+      g.poly([x - 1.5*S, bodyY, x - 3.5*S, bodyY + 2.5*S, x - 0.5*S, bodyY + 2.5*S]).fill(skin);
+      g.poly([x + 1.5*S, bodyY, x + 3.5*S, bodyY + 2.5*S, x + 0.5*S, bodyY + 2.5*S]).fill(skin);
+    } else if (_collarType === 4) {
+      /* Turtleneck — higher collar */
+      g.roundRect(x - 2*S, bodyY - 1.5*S, 4*S, 3*S, 1*S).fill(ch.shirt);
+    }
+    /* Belt on ~40% of standing characters */
+    if (!isSitting && (_clothH >> 4) % 5 < 2) {
+      g.rect(x - 5*S, bodyY + bodyH - 2*S, 10*S, 1.5*S).fill('#3A3A3A');
+      g.rect(x - 0.8*S, bodyY + bodyH - 2*S, 1.6*S, 1.5*S).fill('#888'); /* buckle */
+    }
+    /* Breast pocket on ~30% */
+    if ((_clothH >> 8) % 3 === 0) {
+      g.rect(x + 2*S, bodyY + 2*S, 2.5*S, 2.5*S).stroke({ color: 0x000000, alpha: 0.15, width: 0.8 });
+    }
+    if (ch.role === 'ceo') {
+      /* CEO tie + gold star badge */
+      g.poly([x, bodyY + 2 * S, x - 1.5 * S, bodyY + 7 * S, x, bodyY + 9 * S, x + 1.5 * S, bodyY + 7 * S]).fill(C.tie);
+      /* Gold lapel pin */
+      g.circle(x + 4.5 * S, bodyY + 2.5 * S, 1.5 * S).fill('#FFD700');
+      g.circle(x + 4.5 * S, bodyY + 2.5 * S, 0.8 * S).fill('#FFF8DC');
+    }
+    if (ch.role === 'specialist') {
+      /* Lab coat collar lines */
+      g.moveTo(x - 4 * S, bodyY + 1 * S).lineTo(x - 1 * S, bodyY + 4 * S).stroke({ color: C.labCoat, width: 1.5 });
+      g.moveTo(x + 4 * S, bodyY + 1 * S).lineTo(x + 1 * S, bodyY + 4 * S).stroke({ color: C.labCoat, width: 1.5 });
+    }
+
+    /* Arms */
+    if (isOnPhone) {
+      g.rect(x - 7 * S, bodyY + 1 * S, 2.5 * S, 7 * S).fill(skin);
+      g.rect(x + 4.5 * S, bodyY - 4 * S, 2.5 * S, 7 * S).fill(skin);
+      g.rect(x + 5 * S, bodyY - 6 * S, 2 * S, 5 * S).fill(C.phone);
+      if (f % 30 < 15) g.circle(x + 6 * S, bodyY - 7 * S, 2 * S).fill(C.phoneGlow);
+    } else if (ch.state === 'typing') {
+      const aw = Math.sin(f * 0.3) * 1 * S;
+      g.rect(x - 7 * S, bodyY + 4 * S + aw, 2.5 * S, 6 * S).fill(skin);
+      g.rect(x + 4.5 * S, bodyY + 4 * S - aw, 2.5 * S, 6 * S).fill(skin);
+    } else if (ch.state === 'thinking') {
+      g.rect(x - 7 * S, bodyY + 1 * S, 2.5 * S, 7 * S).fill(skin);
+      g.rect(x + 4.5 * S, bodyY - 2 * S, 2.5 * S, 6 * S).fill(skin);
+    } else if (ch.state === 'presenting') {
+      g.rect(x - 7 * S, bodyY - 3 * S, 2.5 * S, 8 * S).fill(skin);
+      g.rect(x + 4.5 * S, bodyY + 2 * S, 2.5 * S, 7 * S).fill(skin);
+    } else {
+      g.rect(x - 7 * S, bodyY + 1 * S, 2.5 * S, 8 * S).fill(skin);
+      g.rect(x + 4.5 * S, bodyY + 1 * S, 2.5 * S, 8 * S).fill(skin);
+    }
+
+    /* Head */
+    const headY = bodyY - 5 * S;
+    g.circle(x, headY, 5 * S).fill(skin);
+
+    /* Gender-differentiated hair styles (v6.1 — dramatically distinct):
+       M: 0=short crop, 1=quiff/pompadour, 2=buzz
+       F: 3=long flowing, 4=bob with bangs, 5=top bun */
+    const hs = ch.hairStyle != null ? ch.hairStyle : 0;
+    if (hs === 3) {
+      /* Long flowing — full top + wide long drapes well past shoulders */
+      g.moveTo(x - 6 * S, headY - 1.5 * S).arc(x, headY - 1 * S, 6 * S, Math.PI, 0).fill(hair);
+      g.roundRect(x - 6.5 * S, headY - 2 * S, 3 * S, 18 * S, 1 * S).fill(hair);
+      g.roundRect(x + 3.5 * S, headY - 2 * S, 3 * S, 18 * S, 1 * S).fill(hair);
+      /* Slight wave at bottom */
+      g.roundRect(x + 3 * S, headY + 13 * S, 3.5 * S, 3 * S, 1.5 * S).fill(hair);
+    } else if (hs === 4) {
+      /* Bob with bangs — thick fringe across forehead + short rounded sides */
+      g.moveTo(x - 6 * S, headY - 2 * S).arc(x, headY - 2 * S, 6 * S, Math.PI, 0).fill(hair);
+      /* Thick straight bangs */
+      g.roundRect(x - 4.5 * S, headY - 4.5 * S, 9 * S, 4 * S, 1 * S).fill(hair);
+      /* Short rounded side panels */
+      g.roundRect(x - 6.2 * S, headY - 2 * S, 2.5 * S, 9 * S, 1.5 * S).fill(hair);
+      g.roundRect(x + 3.7 * S, headY - 2 * S, 2.5 * S, 9 * S, 1.5 * S).fill(hair);
+    } else if (hs === 5) {
+      /* Top bun — hair pulled up into visible bun on crown */
+      g.moveTo(x - 5.2 * S, headY - 1.2 * S).arc(x, headY - 1.2 * S, 5.2 * S, Math.PI, 0).fill(hair);
+      g.rect(x - 5.2 * S, headY - 2 * S, 2 * S, 5 * S).fill(hair);
+      g.rect(x + 3.2 * S, headY - 2 * S, 2 * S, 5 * S).fill(hair);
+      /* Round bun sitting on top of head */
+      g.circle(x, headY - 8.5 * S, 3.8 * S).fill(hair);
+      /* Hair tie band */
+      g.rect(x - 2.5 * S, headY - 5.5 * S, 5 * S, 1.5 * S).fill(ch.shirt);
+    } else if (hs === 1) {
+      /* Quiff/pompadour — tall swooped front, short sides */
+      g.moveTo(x - 5.2 * S, headY - 1.2 * S).arc(x, headY - 1.2 * S, 5.2 * S, Math.PI, 0).fill(hair);
+      /* Tall front volume — clearly visible above head */
+      g.roundRect(x - 3.5 * S, headY - 8 * S, 7 * S, 6 * S, 2.5 * S).fill(hair);
+      /* Very short cropped sides */
+      g.rect(x - 5.2 * S, headY - 0.5 * S, 1.2 * S, 1.5 * S).fill(hair);
+      g.rect(x + 4 * S, headY - 0.5 * S, 1.2 * S, 1.5 * S).fill(hair);
+    } else if (hs === 2) {
+      /* Buzz cut — barely-there stubble cap (clearly shorter than others) */
+      g.moveTo(x - 4.2 * S, headY + 0.5 * S).arc(x, headY + 0.5 * S, 4.2 * S, Math.PI, 0).fill(hair);
+    } else {
+      /* Short crop (default) — standard with visible side panels */
+      g.moveTo(x - 5.2 * S, headY - 1.2 * S).arc(x, headY - 1.2 * S, 5.2 * S, Math.PI, 0).fill(hair);
+      g.rect(x - 5.2 * S, headY - 2 * S, 2.2 * S, 5.5 * S).fill(hair);
+      g.rect(x + 3 * S, headY - 2 * S, 2.2 * S, 5.5 * S).fill(hair);
+    }
+
+    /* Face — eyes blink every ~4-6 seconds with per-character offset */
+    const blinkCycle = 240 + (hashStr(ch.id) % 120); /* 240-360 frames = 4-6s */
+    const blinkPhase = (f + hashStr(ch.id) * 7) % blinkCycle;
+    const isBlinking = blinkPhase < 8; /* 8 frames ≈ 130ms closed */
+    if (isBlinking) {
+      /* Closed eyes — thin line */
+      g.rect(x - 2.5 * S, headY + 0.2 * S, 1.5 * S, 0.5 * S).fill(C.eyes);
+      g.rect(x + 1 * S, headY + 0.2 * S, 1.5 * S, 0.5 * S).fill(C.eyes);
+    } else {
+      g.rect(x - 2.5 * S, headY - 0.5 * S, 1.5 * S, 1.5 * S).fill(C.eyes);
+      g.rect(x + 1 * S, headY - 0.5 * S, 1.5 * S, 1.5 * S).fill(C.eyes);
+    }
+    /* State-specific mouth expressions */
+    if (ch.progress >= 1.0) {
+      /* Happy smile — upward arc */
+      g.moveTo(x - 1.5*S, headY + 2*S).quadraticCurveTo(x, headY + 3.5*S, x + 1.5*S, headY + 2*S).stroke({ color: C.mouth, width: 1 });
+    } else if (ch.state === 'typing') {
+      /* Focused — small 'o' */
+      g.circle(x, headY + 2.2*S, 0.8*S).fill(C.mouth);
+    } else if (ch.state === 'thinking') {
+      /* Pondering — flat pressed line */
+      g.rect(x - 1.2*S, headY + 2.2*S, 2.4*S, 0.4*S).fill(C.mouth);
+    } else if (ch.state === 'presenting') {
+      /* Speaking — wider open */
+      g.rect(x - 1.2*S, headY + 1.8*S, 2.4*S, 1.5*S).fill(C.mouth);
+    } else {
+      /* Default neutral */
+      g.rect(x - 1*S, headY + 2*S, 2*S, 0.8*S).fill(C.mouth);
+    }
+
+    /* Role-specific accessories */
+    if (ch.role === 'specialist') {
+      /* Glasses */
+      const gy = headY - 0.3 * S;
+      g.rect(x - 3.5 * S, gy - 1.5 * S, 3 * S, 2.5 * S).stroke({ color: C.glasses, width: 1 });
+      g.rect(x + 0.5 * S, gy - 1.5 * S, 3 * S, 2.5 * S).stroke({ color: C.glasses, width: 1 });
+      g.moveTo(x - 0.5 * S, gy).lineTo(x + 0.5 * S, gy).stroke({ color: C.glasses, width: 1 });
+    }
+    if (ch.role === 'leader' && ch.gender !== 'F') {
+      /* Male leaders get a thin tie in their domain color */
+      const tieColor = ch.shirt || '#556';
+      g.poly([x, bodyY + 2*S, x-1*S, bodyY+5*S, x, bodyY+6.5*S, x+1*S, bodyY+5*S]).fill(tieColor);
+    }
+    if (ch.role === 'leader' && ch.gender === 'F') {
+      /* Female leaders get a pearl necklace dot + brooch in domain color */
+      g.circle(x - 1.5*S, bodyY + 1*S, 0.8*S).fill('#F0E6D3');
+      g.circle(x, bodyY + 0.5*S, 0.8*S).fill('#F0E6D3');
+      g.circle(x + 1.5*S, bodyY + 1*S, 0.8*S).fill('#F0E6D3');
+      g.circle(x, bodyY + 1.8*S, 1.5*S).fill(ch.shirt || '#C87070');
+    }
+    /* Worker role-specific accessories (drawn on head/body overlay)
+       Use _backendId (set during recruit) to match backend worker domain, fallback to ch.id */
+    const wid = ch._backendId || ch.id;
+    if (wid === 'designer' || wid === 'frontend_developer') {
+      /* Beret — small tilted cap on top of head */
+      g.ellipse(x + 1*S, headY - 5.5*S, 5*S, 2.5*S).fill('#D44');
+      g.circle(x + 1*S, headY - 6.5*S, 1*S).fill('#D44');
+    } else if (wid === 'backend_developer' || wid === 'devops_engineer' || wid === 'data_engineer') {
+      /* Headphones — arc over head + ear pads */
+      g.moveTo(x - 5.5*S, headY).arc(x, headY - 3*S, 6*S, Math.PI, 0, true).stroke({ color: '#555', width: 1.5 });
+      g.circle(x - 5.5*S, headY + 0.5*S, 2*S).fill('#444');
+      g.circle(x + 5.5*S, headY + 0.5*S, 2*S).fill('#444');
+    } else if (wid === 'data_analyst' || wid === 'financial_analyst' || wid === 'product_analyst') {
+      /* Glasses (same as specialist but thinner) */
+      const gy = headY - 0.3*S;
+      g.rect(x - 3*S, gy - 1*S, 2.5*S, 2*S).stroke({ color: '#666', width: 0.8 });
+      g.rect(x + 0.5*S, gy - 1*S, 2.5*S, 2*S).stroke({ color: '#666', width: 0.8 });
+      g.moveTo(x - 0.5*S, gy).lineTo(x + 0.5*S, gy).stroke({ color: '#666', width: 0.8 });
+    } else if (wid === 'content_writer' || wid === 'legal_counsel') {
+      /* Pen behind ear */
+      g.moveTo(x + 4.5*S, headY - 3*S).lineTo(x + 6*S, headY + 2*S).stroke({ color: '#DAA520', width: 1.2 });
+    } else if (wid === 'security_analyst' || wid === 'compliance_officer') {
+      /* ID badge on chest */
+      g.roundRect(x + 3.5*S, bodyY + 2*S, 3*S, 4*S, 0.5*S).fill('#FFF');
+      g.rect(x + 4*S, bodyY + 2.5*S, 2*S, 1.5*S).fill('#4A90D9');
+    } else if (wid === 'recruiter' || wid === 'training_specialist') {
+      /* Name tag clip on shirt */
+      g.roundRect(x - 5*S, bodyY + 3*S, 4.5*S, 2.5*S, 0.5*S).fill('#FFF');
+      g.rect(x - 4.5*S, bodyY + 3.5*S, 1*S, 1.5*S).fill('#E74C3C');
+    } else if (wid === 'ml_engineer' || wid === 'data_scientist') {
+      /* Small circuit/chip badge */
+      g.rect(x + 4*S, bodyY + 3*S, 2.5*S, 2.5*S).fill('#2C3E50');
+      g.rect(x + 4.5*S, bodyY + 3.5*S, 1.5*S, 1.5*S).fill('#2ECC71');
+    } else if (wid === 'strategist' || wid === 'project_manager') {
+      /* Clipboard — small board on side */
+      g.rect(x - 8*S, bodyY + 2*S, 2.5*S, 4*S).fill('#CD853F');
+      g.rect(x - 7.5*S, bodyY + 3*S, 1.5*S, 2.5*S).fill('#FFF');
+    } else if (wid === 'architect' || wid === 'org_developer') {
+      /* Pencil tucked behind ear */
+      g.moveTo(x - 5*S, headY - 4*S).lineTo(x - 6.5*S, headY + 1*S).stroke({ color: '#F4A460', width: 1.2 });
+      g.circle(x - 6.5*S, headY + 1.5*S, 0.8*S).fill('#333');
+    }
+    if (wid === 'fact_checker' || wid === 'researcher') {
+      /* Magnifying glass held at side */
+      g.circle(x - 7*S, bodyY + 5*S, 2*S).stroke({ color: '#888', width: 1 });
+      g.moveTo(x - 8.5*S, bodyY + 6.5*S).lineTo(x - 9.5*S, bodyY + 8*S).stroke({ color: '#888', width: 1.2 });
+    } else if (wid === 'accountant' || wid === 'compensation_analyst') {
+      /* Small calculator badge */
+      g.roundRect(x + 3.5*S, bodyY + 3*S, 3*S, 3.5*S, 0.3*S).fill('#2C3E50');
+      g.rect(x + 4*S, bodyY + 3.5*S, 2*S, 1*S).fill('#7EC8E3');
+      g.rect(x + 4*S, bodyY + 5*S, 0.8*S, 0.5*S).fill('#FFF');
+      g.rect(x + 5.2*S, bodyY + 5*S, 0.8*S, 0.5*S).fill('#FFF');
+    } else if (wid === 'ux_researcher' || wid === 'product_manager') {
+      /* Post-it note stuck on shirt */
+      g.rect(x - 5*S, bodyY + 4*S, 3.5*S, 3*S).fill('#FFD93D');
+    } else if (wid === 'ip_specialist' || wid === 'process_analyst') {
+      /* Folder under arm */
+      g.rect(x + 5*S, bodyY + 4*S, 2*S, 5*S).fill('#8B4513');
+      g.rect(x + 5*S, bodyY + 4*S, 2*S, 0.5*S).fill('#CD853F');
+    }
+    /* Earrings for some female characters (hash-based) */
+    const earId = ch._backendId || ch.id;
+    if (ch.gender === 'F' && (hashStr(earId) % 3 === 0)) {
+      const earC = ['#FFD700','#C0C0C0','#E8B4B8'][hashStr(earId) % 3]; /* gold, silver, rose */
+      g.circle(x - 5*S, headY + 2*S, 1*S).fill(earC);
+    }
+
+    /* ── OVERLAY graphics (NOT mirrored) ── */
+    /* Walking dust */
+    if (ch.state === 'walking' && f % 8 < 3) {
+      const dustOff = (f % 3) * 3;
+      og.circle(x + 3 + dustOff, y + 3, 1.5).fill({ color: 0xB4AA96, alpha: 0.3 });
+      og.circle(x - 2 - dustOff, y + 4, 1).fill({ color: 0xB4AA96, alpha: 0.3 });
+    }
+    /* Laptop (sitting/typing) */
+    if (isSitting || ch.state === 'typing') {
+      og.rect(x - 8, by - 2 * S, 16, 10).fill(C.laptop);
+      const screenCol = ch.state === 'typing' ? (f % 20 < 10 ? C.screen : C.screenGlow) : C.screen;
+      og.rect(x - 6, by - 2 * S + 1, 12, 6).fill(screenCol);
+      og.rect(x - 7, by - 2 * S + 8, 14, 3).fill(C.laptopBase);
+    }
+
+    /* NPC Alert indicator (❗ bouncing red circle) */
+    if (this._npcManager) {
+      const npcSt = this._npcManager._npcs.get(ch.id);
+      if (npcSt && npcSt.npcState === 'npc_alerting') {
+        const bounce = Math.sin(f * 0.3) * 4;
+        const alertY = headY - 16 * S + bounce;
+        og.circle(x, alertY, 8).fill({ color: 0xE94560, alpha: 0.9 });
+        og.rect(x - 1.5, alertY - 4, 3, 5).fill(0xFFFFFF);
+        og.circle(x, alertY + 3, 1.5).fill(0xFFFFFF);
+      }
+    }
+
+    /* ── TEXT elements (NOT mirrored) ── */
+    const nameStr = ch.emoji ? `${ch.emoji} ${ch.name}` : ch.name;
+    cont._nameText.text = nameStr;
+    cont._nameText.x = x; cont._nameText.y = by + 8 * S - 4;
+
+    if (ch._workLabel && ch.state !== 'walking') {
+      const statusStr = ch._workLabel.length > 14 ? ch._workLabel.substring(0, 13) + '..' : ch._workLabel;
+      cont._statusText.text = statusStr;
+      cont._statusText.x = x; cont._statusText.y = by + 8 * S + 6;
+      cont._statusText.visible = true;
+    } else {
+      cont._statusText.visible = false;
+    }
+
+    /* Progress bar */
+    if (ch.progress >= 0) {
+      const barW = 30, barH = 5;
+      const barX = x - barW / 2;
+      const barY = (isSitting ? bodyY : headY) - 10 * S;
+      const pg = cont._progressGfx;
+      pg.clear();
+      pg.roundRect(barX, barY, barW, barH, 2).fill(C.progressBg);
+      const p = Math.max(0, Math.min(1, ch.progress));
+      const pColor = p < 0.3 ? C.progressLow : p < 0.7 ? C.progressMid : C.progressHigh;
+      if (p > 0) pg.roundRect(barX, barY, barW * p, barH, 2).fill(pColor);
+      pg.visible = true;
+      cont._progressText.text = Math.round(p * 100) + '%';
+      cont._progressText.x = x; cont._progressText.y = barY - 10;
+      cont._progressText.visible = true;
+    } else {
+      cont._progressGfx.visible = false;
+      cont._progressText.visible = false;
+    }
+
+    /* Working indicator dots */
+    if (_WORKING_STATES.has(ch.state) && !ch.bubble && ch.progress < 0) {
+      const dotBaseY = (isSitting ? bodyY : headY) - 13 * S;
+      const phase = ch.frame * 0.08;
+      for (let i = 0; i < 3; i++) {
+        const bounce = Math.sin(phase + i * 1.2) * 2.5;
+        og.circle(x - 5 + i * 5, dotBaseY + bounce, 2).fill({ color: 0xFFFFFF, alpha: 0.85 });
+        og.circle(x - 5 + i * 5, dotBaseY + bounce, 2).stroke({ color: 0x000000, alpha: 0.2, width: 0.5 });
+      }
+    }
+
+    /* Speech bubble */
+    if (ch.bubble) {
+      const isPinned = this._pinnedBubbles.has(ch.id);
+      const maxLen = isPinned ? 28 : 18;
+      const bubbleStr = ch.bubble.length > maxLen ? ch.bubble.substring(0, maxLen - 1) + '..' : ch.bubble;
+      cont._bubbleText.text = bubbleStr;
+      const tw = cont._bubbleText.width;
+      const bw = Math.min(tw + 12, isPinned ? 180 : 120);
+      const bh = 18;
+      const bx = x - bw / 2;
+      const bby = (isSitting ? bodyY : headY) - 14 * S;
+      const bbg = cont._bubbleGfx;
+      bbg.clear();
+      bbg.roundRect(bx, bby, bw, bh, 5).fill({ color: _BUBBLE_BG_PARSED.color, alpha: _BUBBLE_BG_PARSED.alpha });
+      bbg.roundRect(bx, bby, bw, bh, 5).stroke({ color: isPinned ? 0xE94560 : 0xFFFFFF, alpha: isPinned ? 0.4 : 0.1, width: 1 });
+      bbg.poly([x - 4, bby + bh, x + 4, bby + bh, x, bby + bh + 6]).fill({ color: _BUBBLE_BG_PARSED.color, alpha: _BUBBLE_BG_PARSED.alpha });
+      /* Pin indicator — small red dot at top-right of bubble */
+      if (isPinned) bbg.circle(bx + bw - 4, bby + 4, 3).fill({ color: 0xE94560, alpha: 0.9 });
+      bbg.visible = true;
+      cont._bubbleText.x = x; cont._bubbleText.y = bby + 4;
+      cont._bubbleText.visible = true;
+    } else {
+      cont._bubbleGfx.visible = false;
+      cont._bubbleText.visible = false;
+    }
+  }
+
+  /* ═════════════════════════════════════════════════
+     CONFETTI (per-frame)
+     ═════════════════════════════════════════════════ */
+  _renderConfetti() {
+    const g = this._confettiGfx;
+    g.clear();
+    if (this._confetti.length === 0) return;
+    for (let i = this._confetti.length - 1; i >= 0; i--) {
+      const p = this._confetti[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.02;
+      p.rotation += p.rotSpeed; p.life--;
+      if (p.life <= 0 || p.y > H + 20) { this._confetti.splice(i, 1); continue; }
+      const a = Math.min(1, p.life / 30);
+      /* Draw rotated confetti rectangle — use simple rect (rotation approximated by size variation) */
+      const rads = p.rotation * Math.PI / 180;
+      const hw = p.size / 2, hh = p.size / 4;
+      /* Approximate rotated rect with a polygon */
+      const cos = Math.cos(rads), sin = Math.sin(rads);
+      g.poly([
+        p.x + (-hw * cos - (-hh) * sin), p.y + (-hw * sin + (-hh) * cos),
+        p.x + (hw * cos - (-hh) * sin), p.y + (hw * sin + (-hh) * cos),
+        p.x + (hw * cos - hh * sin), p.y + (hw * sin + hh * cos),
+        p.x + (-hw * cos - hh * sin), p.y + (-hw * sin + hh * cos),
+      ]).fill({ color: p.color, alpha: a });
+    }
+  }
+
+  /* ═════════════════════════════════════════════════
+     UI OVERLAYS (per-frame)
+     ═════════════════════════════════════════════════ */
+  _renderUI() {
+    const g = this._fxGfx;
+    g.clear();
+
+    /* Scene flash (golden border) */
+    if (this._sceneFade > 0) {
+      g.rect(2, 2, W - 4, H - 4).stroke({ color: 0xFFDC64, alpha: this._sceneFade * 0.35, width: 3 });
+      this._sceneFade = Math.max(0, this._sceneFade - 0.03);
+    }
+
+    /* Error flash (red border) */
+    if (this._errorFade > 0) {
+      g.rect(2, 2, W - 4, H - 4).stroke({ color: 0xE74C3C, alpha: this._errorFade * 0.5, width: 3 });
+      this._errorFade = Math.max(0, this._errorFade - 0.04);
+    }
+
+    /* Scene label overlay */
+    if (this._sceneLabelAlpha > 0) {
+      const a = Math.min(1, this._sceneLabelAlpha);
+      if (this._sceneLabel !== this._prevSceneLabel) {
+        this._sceneLabelText.text = this._sceneLabel;
+        this._prevSceneLabel = this._sceneLabel;
+      }
+      const tw = this._sceneLabelText.width;
+      this._sceneLabelBg.clear();
+      this._sceneLabelBg.roundRect(W / 2 - tw / 2 - 18, H / 2 - 16, tw + 36, 32, 8).fill({ color: 0x000000, alpha: 0.55 });
+      this._sceneLabelBg.alpha = a; this._sceneLabelBg.visible = true;
+      this._sceneLabelText.alpha = a; this._sceneLabelText.visible = true;
+      this._sceneLabelAlpha -= 0.018;
+    } else {
+      this._sceneLabelBg.visible = false;
+      this._sceneLabelText.visible = false;
+    }
+
+    /* HUD label (bottom-left) */
+    if (this._hudLabel) {
+      if (this._hudLabel !== this._prevHud) {
+        this._hudText.text = this._hudLabel;
+        this._prevHud = this._hudLabel;
+      }
+      const tw = this._hudText.width;
+      this._hudBg.clear();
+      this._hudBg.roundRect(6, H - 22, tw + 14, 18, 4).fill({ color: 0x000000, alpha: 0.5 });
+      this._hudBg.visible = true; this._hudText.visible = true;
+    } else {
+      this._hudBg.visible = false; this._hudText.visible = false;
+    }
+    /* Version stamp (bottom-right, tiny) */
+    if (!this._versionText) {
+      this._versionText = new PIXI.Text({ text: 'v6.1', style: { fontFamily: 'monospace', fontSize: 8, fill: 'rgba(255,255,255,0.25)' }});
+      this._versionText.anchor.set(1, 1);
+      this.uiLayer.addChild(this._versionText);
+    }
+    this._versionText.x = W - 6; this._versionText.y = H - 4;
+    this._renderHighlight();
+    this._renderMinimap();
+  }
+
+  /* ── Sidebar→Canvas highlight glow (Phase 3) ── */
+  _renderHighlight() {
+    const g = this._highlightGfx;
+    g.clear();
+    if (!this._highlightChar) return;
+    const ch = this.chars.get(this._highlightChar);
+    if (!ch || !ch.visible) { this._highlightChar = null; return; }
+    /* Expand + fade animation */
+    this._highlightAlpha -= 0.012;
+    this._highlightScale += 0.4;
+    if (this._highlightAlpha <= 0) { this._highlightChar = null; return; }
+    /* Transform world coords to canvas coords (uiLayer is zoom-independent) */
+    const cx = ch.x * this._zoom + this._panX;
+    const cy = (ch.y - 10) * this._zoom + this._panY;
+    const r = (20 + this._highlightScale) * this._zoom;
+    g.circle(cx, cy, r).fill({ color: 0xF39C12, alpha: this._highlightAlpha * 0.3 });
+    g.circle(cx, cy, r * 0.6).fill({ color: 0xF39C12, alpha: this._highlightAlpha * 0.5 });
+  }
+
+  /* Trigger highlight on a character */
+  highlightCharacter(charId) {
+    this._highlightChar = charId;
+    this._highlightAlpha = 1;
+    this._highlightScale = 0;
+  }
+
+  /* ── Phase 4A: Minimap + Zoom indicator ── */
+  _renderMinimap() {
+    const g = this._minimapGfx;
+    if (!g) return;
+    g.clear();
+
+    const MM_W = 160, MM_H = 90, MM_PAD = 10;
+    const mmX = W - MM_W - MM_PAD, mmY = H - MM_H - MM_PAD;
+    const sx = MM_W / W, sy = MM_H / H;
+
+    /* Background (brightens on hover for interaction feedback) */
+    const mmHover = this._interactionMgr && this._interactionMgr._minimapHover;
+    const bgAlpha = mmHover ? 0.85 : 0.7;
+    const borderColor = mmHover ? 0x4A90D9 : 0x30363D;
+    g.roundRect(mmX - 2, mmY - 2, MM_W + 4, MM_H + 4, 4).fill({ color: 0x000000, alpha: bgAlpha });
+    g.roundRect(mmX - 2, mmY - 2, MM_W + 4, MM_H + 4, 4).stroke({ color: borderColor, width: mmHover ? 1.5 : 1 });
+
+    /* Rooms */
+    for (const [id, r] of Object.entries(ROOMS)) {
+      const lvl = this._lightLevels.get(id) || 0;
+      const color = lvl > 0.3 ? 0x3A4A5A : 0x1A1A24;
+      g.rect(mmX + r.x * sx, mmY + r.y * sy, r.w * sx, r.h * sy).fill({ color, alpha: 0.8 });
+      g.rect(mmX + r.x * sx, mmY + r.y * sy, r.w * sx, r.h * sy).stroke({ color: 0x555555, width: 0.5 });
+    }
+
+    /* Characters as small dots */
+    for (const ch of this.chars.values()) {
+      if (!ch.visible) continue;
+      const dotColor = ch.role === 'ceo' ? 0x4A90D9 : ch.role === 'leader' ? 0x2ECC71 : 0xE94560;
+      g.circle(mmX + ch.x * sx, mmY + ch.y * sy, 2).fill(dotColor);
+    }
+
+    /* Viewport indicator (only when zoomed) */
+    if (this._zoom > 1.001) {
+      const vpX = -this._panX / this._zoom;
+      const vpY = -this._panY / this._zoom;
+      const vpW = W / this._zoom;
+      const vpH = H / this._zoom;
+      g.rect(mmX + vpX * sx, mmY + vpY * sy, vpW * sx, vpH * sy)
+        .stroke({ color: 0xFFFFFF, alpha: 0.8, width: 1.5 });
+    }
+
+    /* Zoom level indicator (top-right) */
+    if (this._zoom > 1.001) {
+      const hint = this._zoomHintShown ? '' : '  [0:reset \u2190\u2191\u2193\u2192:pan]';
+      this._zoomText.text = this._zoom.toFixed(1) + 'x' + hint;
+      this._zoomText.visible = true;
+      /* Show hint only for first 8 seconds of zoomed state */
+      if (!this._zoomHintShown && !this._zoomHintTimer) {
+        this._zoomHintTimer = setTimeout(() => { this._zoomHintShown = true; this._zoomHintTimer = null; }, 8000);
+      }
+    } else {
+      this._zoomText.visible = false;
+    }
+  }
+
+  /* ═════════════════════════════════════════════════
+     HELPERS
+     ═════════════════════════════════════════════════ */
+  _drawPlantOnGfx(g, x, y, lit) {
+    g.rect(x - 5, y + 8, 10, 8).fill(lit ? C.pot : C.potOff);
+    g.circle(x, y, 7).fill(lit ? C.plant : C.plantDark);
+    g.circle(x - 3, y + 2, 3).fill(lit ? C.plantDark : C.plantDarker);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §5  SIM RENDERER (WebSocket + State)
+   ═══════════════════════════════════════════════════ */
+class SimRenderer {
+  constructor(engine) {
+    this.engine = engine;
+    this.ws = null;
+    this.logEl = document.getElementById('log');
+    this.startTime = null;
+    this.timerIv = null;
+    /* Event queuing while interrupt modal is open */
+    this._modalOpen = false;
+    this._eventQueue = [];
+    /* Choreography timers for multi-step frontend-driven animations */
+    this._choreographyTimers = [];
+    /* Track current interrupt type for context-aware reactions */
+    this._currentInterruptType = '';
+  }
+
+  connect() {
+    this._reconnectAttempts = 0;
+    this._maxReconnect = 5;
+    this._openConnection();
+  }
+
+  _openConnection() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+    this.ws.onopen = () => {
+      document.getElementById('cdot').classList.add('on');
+      this._reconnectAttempts = 0;
+      this._hideReconnectBanner();
+    };
+    this.ws.onmessage = (e) => { try { this._handle(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+    this.ws.onclose = () => {
+      document.getElementById('cdot').classList.remove('on');
+      this.addLog('Server disconnected', 'error');
+      /* Clean up choreography timers to prevent stale animations */
+      for (const t of this._choreographyTimers) clearTimeout(t);
+      this._choreographyTimers = [];
+      this._tryReconnect();
+    };
+    this.ws.onerror = () => {}; /* onclose will fire after onerror */
+  }
+
+  _tryReconnect() {
+    if (this._reconnectAttempts >= this._maxReconnect) {
+      this._showReconnectBanner(true);
+      return;
+    }
+    this._reconnectAttempts++;
+    /* Exponential backoff with jitter to prevent thundering herd */
+    const baseDelay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 16000);
+    const jitter = Math.random() * baseDelay * 0.3; /* 0~30% jitter */
+    const delay = baseDelay + jitter;
+    this._showReconnectBanner(false);
+
+    /* Pause reconnection when tab is hidden */
+    if (document.hidden) {
+      const onVisible = () => {
+        document.removeEventListener('visibilitychange', onVisible);
+        this._reconnectTimer = setTimeout(() => this._openConnection(), 500);
+      };
+      document.addEventListener('visibilitychange', onVisible);
+    } else {
+      this._reconnectTimer = setTimeout(() => this._openConnection(), delay);
+    }
+  }
+
+  _showReconnectBanner(isFinal) {
+    let banner = document.getElementById('reconnect-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'reconnect-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:110;padding:8px 16px;text-align:center;font-size:0.82em;font-weight:600;transition:opacity .3s;';
+      document.body.appendChild(banner);
+    }
+    if (isFinal) {
+      banner.style.background = '#e74c3c';
+      banner.style.color = '#fff';
+      banner.textContent = '서버 연결 실패 — ';
+      const rb = document.createElement('a');
+      rb.textContent = '새로고침';
+      rb.href = '#';
+      rb.style.cssText = 'color:#fff;text-decoration:underline;cursor:pointer;';
+      rb.addEventListener('click', (e) => { e.preventDefault(); location.reload(); });
+      banner.appendChild(rb);
+    } else {
+      banner.style.background = 'var(--yellow)';
+      banner.style.color = '#000';
+      banner.textContent = '재연결 중... (' + this._reconnectAttempts + '/' + this._maxReconnect + ')';
+    }
+    banner.style.opacity = '1';
+  }
+
+  _hideReconnectBanner() {
+    const banner = document.getElementById('reconnect-banner');
+    if (banner) { banner.style.opacity = '0'; setTimeout(() => banner.remove(), 300); }
+  }
+  send(d) { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(d)); }
+
+  _handle(ev) {
+    /* While interrupt modal is open, queue visual events so the user
+       doesn't miss animations happening behind the modal.
+       Non-visual events (log, progress, errors) still process immediately. */
+    const IMMEDIATE = new Set(['init', 'progress', 'message', 'interrupt', 'complete', 'error']);
+    if (this._modalOpen && !IMMEDIATE.has(ev.type)) {
+      this._eventQueue.push(ev);
+      return;
+    }
+    const m = {
+      init: d => this._onInit(d),
+      scene_change: d => this._onScene(d),
+      char_move: d => this._onMove(d),
+      char_action: d => this._onAction(d),
+      char_spawn: d => this._onSpawn(d),
+      hierarchy: d => this._onHierarchy(d),
+      progress: d => this._onProgress(d),
+      message: d => this._onMessage(d),
+      interrupt: d => this._onInterrupt(d),
+      lights: d => this._onLights(d),
+      complete: d => this._onComplete(d),
+      error: d => this._onError(d),
+    };
+    const fn = m[ev.type];
+    if (fn) fn(ev.data);
+  }
+
+  _onInit(d) {
+    for (const c of (d.characters || [])) this._spawnChar(c, c.home_room);
+  }
+
+  /* Shift a hex color's brightness ±amount (clamped 0-255) */
+  static _shiftColor(hex, amount) {
+    const n = parseInt(hex.replace('#',''), 16);
+    const clamp = v => Math.max(0, Math.min(255, v));
+    const r = clamp(((n >> 16) & 0xFF) + amount);
+    const g = clamp(((n >> 8) & 0xFF) + amount);
+    const b = clamp((n & 0xFF) + amount);
+    return `#${((r<<16)|(g<<8)|b).toString(16).padStart(6,'0')}`;
+  }
+  _spawnChar(cd, spawnAt) {
+    if (this.engine.chars.has(cd.id)) return;
+    /* Workers get slight brightness variation from leader color for visual variety */
+    let shirtColor = cd.color;
+    if (cd.role === 'worker') {
+      const h = hashStr(cd.id);
+      const shift = ((h % 5) - 2) * 15; /* -30, -15, 0, +15, +30 */
+      shirtColor = SimRenderer._shiftColor(shirtColor || '#888', shift);
+    }
+    const ch = new Char(cd.id, cd.name, shirtColor, cd.role, cd.gender);
+    ch.emoji = cd.emoji || '';
+    ch.title = cd.title || '';
+    ch.domain = cd.domain || '';
+
+    if (spawnAt === 'corridor_entrance') {
+      /* Workers enter from off-screen right, staggered along X to avoid overlap */
+      const existingWorkers = [...this.engine.chars.values()].filter(c => c.role === 'worker').length;
+      ch.x = CORRIDOR_ENTRANCE_X + existingWorkers * 25;
+      ch.y = CORR_MID + (existingWorkers % 3 - 1) * 8; /* slight Y spread */
+      ch.currentRoom = null;
+      ch.facingRight = false;
+    } else {
+      const home = spawnAt || cd.home_room || 'lobby';
+      const room = ROOMS[home] || ROOMS.lobby;
+      const slot = nextSlot(room);
+      ch.x = slot.x; ch.y = slot.y;
+      ch.currentRoom = room.id;
+    }
+    ch.visible = true;
+    this.engine.chars.set(cd.id, ch);
+  }
+
+  _onSpawn(d) {
+    if (d.character && this._npcManager) {
+      if (this._npcManager.tryRecruit(d.character, d.spawn_at)) return;
+    }
+    if (d.character) this._spawnChar(d.character, d.spawn_at);
+  }
+
+  _onScene(d) {
+    document.getElementById('step-lbl').textContent = `Step ${d.step}: ${d.label}`;
+    this.addLog(`[Step ${d.step}] ${d.label}`, 'system');
+    this.engine.triggerSceneFlash();
+    this.engine.setSceneLabel(d.label);
+    this.engine._hudLabel = `Step ${d.step}: ${d.label}`;
+    /* Cancel pending choreography from previous scene */
+    for (const t of this._choreographyTimers) clearTimeout(t);
+    this._choreographyTimers = [];
+    /* Clear stale states — new scene actions will set correct states */
+    for (const ch of this.engine.chars.values()) {
+      if (ch.state === 'waiting') {
+        ch.state = 'idle';
+        ch.stopWork();
+        ch.bubble = '';
+        ch.bubbleExp = 0;
+      }
+    }
+    /* On worker_execution entry: clear leftover plan-review states from ceo_confirm_plan.
+       Leaders may still show "presenting plan" — they should be idle before walking to meeting rooms. */
+    if (d.node === 'worker_execution') {
+      for (const ch of this.engine.chars.values()) {
+        if (ch.role === 'leader' && ch.state === 'presenting') {
+          ch.state = 'idle';
+          ch.stopWork();
+          ch.bubble = '';
+          ch.bubbleExp = 0;
+        }
+      }
+      /* CEO "GO!" announcement — brief visual bridge before workers move out */
+      const ceo = this.engine.chars.get('ceo');
+      if (ceo && ceo.path.length === 0) {
+        ceo.setBubble('계획 승인! GO!', 4000);
+        ceo.state = 'presenting';
+        /* After 3.5s, transition CEO to monitoring mode */
+        this._choreographyTimers.push(setTimeout(() => {
+          if (ceo.state === 'presenting') {
+            ceo.applyAction('reviewing', '워커 진행 상황 모니터링 중...');
+          }
+        }, 3500));
+      }
+    }
+    /* Deep research transition safety net: when entering await_research_answers
+       (after user answered interrupt) or deep_research, FORCE research lab state.
+       This is the CRITICAL fix — without it, stale lights/actions from previous
+       scene scripts can override the frontend's submitInterrupt changes. */
+    const DEEP_RESEARCH_ACTIVE = new Set(['await_research_answers', 'deep_research', 'deep_research_revision']);
+    if (DEEP_RESEARCH_ACTIVE.has(d.node)) {
+      this.engine.setLitRooms(['research_lab']);
+      const ceo = this.engine.chars.get('ceo');
+      if (ceo) {
+        ceo.state = 'idle';
+        ceo.stopWork();
+        ceo.bubble = '';
+        ceo.bubbleExp = 0;
+      }
+      const dr = this.engine.chars.get('deep_researcher');
+      if (dr && dr.visible) {
+        dr.applyAction('researching', '딥리서치 진행 중...');
+        dr.startWork('딥리서치 진행 중...');
+      }
+    }
+    /* On post-worker phases: stop all work animations cleanly */
+    if (d.node === 'user_review_results' || d.node === 'result_review' || d.node === 'ceo_final_report') {
+      for (const ch of this.engine.chars.values()) {
+        if (ch.role === 'worker' || ch.role === 'leader') {
+          ch.stopWork();
+        }
+      }
+    }
+    /* Clear stale progress bars when leaving worker/research execution phases */
+    const PROGRESS_NODES = new Set([
+      'worker_execution', 'worker_result_revision',
+      'deep_research', 'deep_research_revision',
+    ]);
+    if (!PROGRESS_NODES.has(d.node)) {
+      for (const ch of this.engine.chars.values()) {
+        if (ch.progress >= 0) ch.progress = -1;
+      }
+    }
+    /* Progress dashboard panel: show during worker/research execution, hide otherwise */
+    if (this._progressPanel) {
+      if (PROGRESS_NODES.has(d.node)) {
+        this._progressPanel.show();
+      } else {
+        this._progressPanel.hide();
+      }
+    }
+    /* Node-specific choreography sequences */
+    this._runChoreography(d.node);
+  }
+
+  _runChoreography(node) {
+    if (node === 'deep_research' || node === 'await_research_answers') {
+      /* Deep research: researcher stays in lab, cycle through activities for visual feedback.
+         Research can take 3-10+ minutes — cycling keeps the UI alive.
+         Also triggered on await_research_answers because astream only yields this node
+         AFTER user answered (interrupt resume) — deep_research hasn't emitted yet. */
+      const activities = [
+        ['researching', '자료 수집 중...'],
+        ['writing', '분석 내용 정리 중...'],
+        ['thinking', '핵심 인사이트 도출 중...'],
+        ['researching', '추가 데이터 검증 중...'],
+        ['writing', '리포트 초안 작성 중...'],
+      ];
+      let idx = 0;
+      const cycle = () => {
+        const dr = this.engine.chars.get('deep_researcher');
+        if (!dr || !dr.visible) return;
+        const [action, label] = activities[idx % activities.length];
+        dr.applyAction(action, label);
+        dr.startWork(label);
+        idx++;
+        this._choreographyTimers.push(setTimeout(cycle, 20000));
+      };
+      this._choreographyTimers.push(setTimeout(cycle, 20000));
+    }
+
+    if (node === 'worker_execution' || node === 'worker_result_revision') {
+      /* Worker execution: cycle through activities for all visible workers.
+         Workers are in meeting rooms doing actual work — show varied activity states.
+         Each worker gets a slightly offset cycle so they don't all change at once. */
+      const workerActivities = [
+        ['writing', '작업 수행 중...'],
+        ['thinking', '분석 검토 중...'],
+        ['writing', '결과물 작성 중...'],
+        ['thinking', '품질 확인 중...'],
+      ];
+      const leaderActivities = [
+        ['reviewing', '진행 상황 확인 중...'],
+        ['thinking', '피드백 검토 중...'],
+        ['reviewing', '워커 결과 리뷰 중...'],
+      ];
+      /* CEO monitoring cycle — independent from worker/leader cycle */
+      const ceoActivities = [
+        ['reviewing', '전체 진행 상황 모니터링 중...'],
+        ['thinking', '결과 품질 검토 중...'],
+        ['reviewing', '워커 보고서 확인 중...'],
+        ['writing', '진행 메모 작성 중...'],
+      ];
+      let ceoIdx = 0;
+      const ceoCycle = () => {
+        const ceo = this.engine.chars.get('ceo');
+        if (ceo && ceo.visible && ceo.path.length === 0) {
+          const [act, lbl] = ceoActivities[ceoIdx % ceoActivities.length];
+          ceo.applyAction(act, lbl);
+          ceoIdx++;
+        }
+        this._choreographyTimers.push(setTimeout(ceoCycle, 18000));
+      };
+      this._choreographyTimers.push(setTimeout(ceoCycle, 8000));
+      let wIdx = 0;
+      const workerCycle = () => {
+        let offset = 0;
+        for (const ch of this.engine.chars.values()) {
+          if (!ch.visible || ch.progress >= 0) continue; /* Skip chars with active progress bars */
+          if (this._npcManager?.isNpcIdle(ch.id)) continue; /* Skip wandering NPCs */
+          if (ch.role === 'worker' && ch.path.length === 0) {
+            /* Per-character stagger: each worker changes activity at a slightly different time */
+            const charDelay = (hashStr(ch.id) % 4) * 1500; /* 0-4.5s offset */
+            const capturedIdx = wIdx, capturedOff = offset;
+            setTimeout(() => {
+              if (ch.visible && ch.path.length === 0) {
+                const [act, lbl] = workerActivities[(capturedIdx + capturedOff) % workerActivities.length];
+                ch.applyAction(act, lbl);
+              }
+            }, charDelay);
+            offset++;
+          } else if (ch.role === 'leader' && ch.path.length === 0) {
+            const charDelay = (hashStr(ch.id) % 3) * 2000;
+            const capturedIdx = wIdx, capturedOff = offset;
+            setTimeout(() => {
+              if (ch.visible && ch.path.length === 0) {
+                const [act, lbl] = leaderActivities[(capturedIdx + capturedOff) % leaderActivities.length];
+                ch.applyAction(act, lbl);
+              }
+            }, charDelay);
+            offset++;
+          }
+        }
+        wIdx++;
+        this._choreographyTimers.push(setTimeout(workerCycle, 15000));
+      };
+      /* Start after workers have had time to walk into meeting rooms */
+      this._choreographyTimers.push(setTimeout(workerCycle, 12000));
+    }
+
+    if (node === 'leader_task_decomposition' || node === 'ceo_confirm_plan') {
+      /* Planning meeting: CEO and leaders discuss in CEO office.
+         Cycle through planning activities to keep the scene alive during long planning phases. */
+      const planActivities = [
+        ['thinking', '계획 논의 중...'],
+        ['presenting', '작업 범위 설명 중...'],
+        ['reviewing', '리소스 검토 중...'],
+        ['thinking', '일정 조율 중...'],
+      ];
+      const ceoPlanActivities = [
+        ['reviewing', '계획 검토 중...'],
+        ['thinking', '전략 구상 중...'],
+        ['reviewing', '리더 보고 검토 중...'],
+      ];
+      let pIdx = 0;
+      const planCycle = () => {
+        /* Leaders cycle through planning activities */
+        let off = 0;
+        for (const ch of this.engine.chars.values()) {
+          if (!ch.visible || ch.role !== 'leader' || ch.path.length > 0) continue;
+          if (this._npcManager?.isNpcIdle(ch.id)) continue; /* Skip wandering NPCs */
+          const charDelay = (hashStr(ch.id) % 3) * 1500;
+          const capturedIdx = pIdx, capturedOff = off;
+          setTimeout(() => {
+            if (ch.visible && ch.path.length === 0) {
+              const [act, lbl] = planActivities[(capturedIdx + capturedOff) % planActivities.length];
+              ch.applyAction(act, lbl);
+            }
+          }, charDelay);
+          off++;
+        }
+        /* CEO also cycles */
+        const ceo = this.engine.chars.get('ceo');
+        if (ceo && ceo.visible && ceo.path.length === 0) {
+          const [act, lbl] = ceoPlanActivities[pIdx % ceoPlanActivities.length];
+          ceo.applyAction(act, lbl);
+        }
+        pIdx++;
+        this._choreographyTimers.push(setTimeout(planCycle, 20000));
+      };
+      /* Start after leaders have walked to CEO office (~5s for phone + walk) */
+      this._choreographyTimers.push(setTimeout(planCycle, 8000));
+    }
+
+    if (node === 'ceo_final_report') {
+      /* Final report: everyone gathers in boardroom. Cycle through presentation activities. */
+      const reportActivities = [
+        ['presenting', '최종 보고 중...'],
+        ['reviewing', '결과물 검토 중...'],
+        ['presenting', '성과 설명 중...'],
+      ];
+      let rIdx = 0;
+      const reportCycle = () => {
+        let off = 0;
+        for (const ch of this.engine.chars.values()) {
+          if (!ch.visible || ch.path.length > 0) continue;
+          if (this._npcManager?.isNpcIdle(ch.id)) continue; /* Skip wandering NPCs */
+          if (ch.role === 'ceo') {
+            ch.applyAction('presenting', '최종 보고서 작성 중...');
+          } else if (ch.role === 'leader' || ch.role === 'worker') {
+            const [act, lbl] = reportActivities[(rIdx + off) % reportActivities.length];
+            ch.applyAction(act, lbl);
+            off++;
+          }
+        }
+        rIdx++;
+        this._choreographyTimers.push(setTimeout(reportCycle, 18000));
+      };
+      /* Start after characters walk to boardroom (~8s) */
+      this._choreographyTimers.push(setTimeout(reportCycle, 10000));
+    }
+  }
+
+  _onLights(d) {
+    this.engine.setLitRooms(d.rooms || []);
+  }
+
+  _onMove(d) {
+    const PHONE_STAGGER = 1300; /* phone anim(1s) + walk-out margin(0.3s) */
+    const WALK_STAGGER = 600;  /* workers just walk in, shorter gap is fine */
+    const ms = d.action === 'phone_then_walk' ? PHONE_STAGGER : WALK_STAGGER;
+    const delay = (d.delay_index || 0) * ms;
+    if (delay > 0) {
+      setTimeout(() => this._execMove(d), delay);
+    } else {
+      this._execMove(d);
+    }
+  }
+
+  _execMove(d) {
+    let ch = this._npcManager?.resolveChar(d.character) || this.engine.chars.get(d.character);
+    if (!ch) return;
+    if (d.action === 'phone_then_walk') {
+      ch.phoneAndMoveTo(d.to_room);
+    } else if (d.action === 'enter_from_corridor') {
+      if (!ch.currentRoom && ch.x >= W) {
+        ch.x = CORRIDOR_ENTRANCE_X;
+        ch.y = CORR_MID;
+      }
+      ch.moveTo(d.to_room);
+    } else {
+      ch.moveTo(d.to_room);
+    }
+    /* Track domain assignments to meeting rooms */
+    if (d.character && d.character.endsWith('_leader') && d.to_room) {
+      const room = ROOMS[d.to_room];
+      if (room && (room.type === 'meeting' || room.type === 'boardroom')) {
+        const domain = d.character.replace('_leader', '');
+        this.engine._roomDomains.set(d.to_room, domain.charAt(0).toUpperCase() + domain.slice(1));
+      }
+    }
+  }
+
+  _onAction(d) {
+    let ch = this._npcManager?.resolveChar(d.character) || this.engine.chars.get(d.character);
+    if (!ch) return;
+    ch.applyAction(d.action, d.detail);
+  }
+
+  _onProgress(d) {
+    let ch = this._npcManager?.resolveChar(d.character) || this.engine.chars.get(d.character);
+    if (!this._progressDebugCount) this._progressDebugCount = 0;
+    this._progressDebugCount++;
+    if (this._progressDebugCount <= 10 || this._progressDebugCount % 20 === 0) {
+      console.log(`[DEBUG-PROGRESS] #${this._progressDebugCount} char="${d.character}" progress=${d.progress} status=${d.status} found=${!!ch} resolveChar=${!!this._npcManager?.resolveChar(d.character)} engineGet=${!!this.engine.chars.get(d.character)}`);
+    }
+    if (!ch) return;
+    ch.progress = d.progress;
+    if (d.status === 'done') {
+      ch.progress = 1;
+      ch.stopWork();
+      ch.setBubble('\u2705 \uc644\ub8cc!', 2500); /* ✅ 완료! */
+      ch.state = 'presenting'; /* brief celebration pose */
+      setTimeout(() => {
+        if (ch.state === 'presenting') ch.state = 'idle';
+        ch.progress = -1;
+      }, 3000);
+    }
+    if (d.summary && d.progress > 0.4) ch.setBubble(d.summary, 3000);
+    /* Update org panel worker status dot */
+    const dot = document.querySelector(`.ow[data-worker="${d.character}"] .status-dot`);
+    if (dot) {
+      dot.className = 'status-dot ' + (d.status === 'done' ? 'done' : d.progress > 0 ? 'working' : 'idle');
+    }
+    /* Update progress dashboard panel */
+    if (this._progressPanel) {
+      this._progressPanel.update(d.character, d.progress, d.status || '', d.summary || '');
+    }
+  }
+
+  _onHierarchy(d) {
+    const tree = document.getElementById('org');
+    while (tree.firstChild) tree.removeChild(tree.firstChild);
+    const ceo = document.createElement('div');
+    ceo.style.cssText = 'font-weight:700;color:var(--blue);margin-bottom:6px;';
+    ceo.textContent = 'CEO';
+    tree.appendChild(ceo);
+    for (const l of (d.leaders || [])) {
+      const le = document.createElement('div');
+      le.className = 'ol';
+      const dn = document.createElement('span');
+      dn.className = 'dn';
+      dn.textContent = '\u251C\u2500 ' + l.domain + ' Leader';
+      le.appendChild(dn);
+      tree.appendChild(le);
+      for (const w of (l.workers || [])) {
+        const we = document.createElement('div');
+        we.className = 'ow';
+        we.dataset.worker = w;
+        const dot = document.createElement('span');
+        dot.className = 'status-dot idle';
+        we.appendChild(dot);
+        we.appendChild(document.createTextNode('\u2502  \u251C\u2500 ' + w));
+        tree.appendChild(we);
+      }
+    }
+    /* Populate progress panel with worker list */
+    if (this._progressPanel) {
+      this._progressPanel.populateFromHierarchy(d.leaders);
+    }
+  }
+
+  _onMessage(d) {
+    const sm = { announcement: 'ceo', report: 'leader', chat: 'worker', system: 'system' };
+    const s = sm[d.style] || 'system';
+    const pfx = d.speaker && d.speaker !== 'system' ? `[${d.speaker}] ` : '';
+    this.addLog(pfx + d.content, s);
+    if (d.speaker && d.speaker !== 'system') {
+      let ch = this._npcManager?.resolveChar(d.speaker) || this.engine.chars.get(d.speaker);
+      if (ch) {
+        ch.setBubble(d.content, 3000);
+        /* Brief presentation pose when character "speaks" */
+        if (ch.path.length === 0 && ch.state !== 'on_phone') {
+          const prev = ch.state;
+          ch.state = 'presenting';
+          setTimeout(() => { if (ch.state === 'presenting') ch.state = prev || 'idle'; }, 3000);
+        }
+      }
+    }
+  }
+
+  _onInterrupt(d) {
+    this._modalOpen = true;
+    this._currentInterruptType = d.interrupt_type || d.type || '';
+    const ov = document.getElementById('int-ov');
+    const ct = document.getElementById('int-c');
+    while (ct.firstChild) ct.removeChild(ct.firstChild);
+    /* Elapsed timer for interrupt modal */
+    const timerEl = document.createElement('div');
+    timerEl.style.cssText = 'text-align:right;font-size:0.7em;color:var(--dim);margin-bottom:6px;font-variant-numeric:tabular-nums;opacity:0.7;';
+    timerEl.textContent = '0:00';
+    ct.appendChild(timerEl);
+    const intStart = Date.now();
+    if (this._intTimerIv) clearInterval(this._intTimerIv);
+    this._intTimerIv = setInterval(() => {
+      const s = Math.floor((Date.now() - intStart) / 1000);
+      timerEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+    InterruptUI.render(d, ct, this);
+    ov.classList.remove('h');
+  }
+
+  submitInterrupt(rd) {
+    this.send({ type: 'interrupt_response', data: rd });
+    document.getElementById('int-ov').classList.add('h');
+    this._modalOpen = false;
+    if (this._intTimerIv) { clearInterval(this._intTimerIv); this._intTimerIv = null; }
+    /* Clear all 'waiting' states immediately — user has responded */
+    for (const ch of this.engine.chars.values()) {
+      if (ch.state === 'waiting' || (ch._workLabel && ch._workLabel.includes('대기'))) {
+        ch.state = 'idle';
+        ch.stopWork();
+        ch.bubble = '';
+        ch.bubbleExp = 0;
+      }
+    }
+    /* Context-aware processing feedback based on interrupt type */
+    const intType = this._currentInterruptType;
+    this._currentInterruptType = '';
+    const ceo = this.engine.chars.get('ceo');
+
+    if (intType === 'research_clarification') {
+      /* ══ Deep research mode: IMMEDIATE full transition ══
+         CEO room OFF → research lab ON → researcher starts working.
+         This must happen BEFORE _flushQueue() to beat any backend events.
+         Cancel any previous choreography first. */
+      for (const t of this._choreographyTimers) clearTimeout(t);
+      this._choreographyTimers = [];
+      /* 1. Lights: research lab only */
+      this.engine.setLitRooms(['research_lab']);
+      /* 2. CEO goes completely idle in the dark */
+      if (ceo) { ceo.state = 'idle'; ceo.stopWork(); ceo.bubble = ''; ceo.bubbleExp = 0; }
+      /* 3. Deep researcher starts working immediately */
+      const dr = this.engine.chars.get('deep_researcher');
+      if (dr && dr.visible) {
+        dr.applyAction('researching', '딥리서치 진행 중...');
+        dr.startWork('딥리서치 진행 중...');
+      }
+      /* 4. Start activity cycling for the long research period (3-10+ min).
+         The backend won't send deep_research scene_change until research completes,
+         so we must start cycling NOW. */
+      const activities = [
+        ['researching', '자료 수집 중...'],
+        ['writing', '분석 내용 정리 중...'],
+        ['thinking', '핵심 인사이트 도출 중...'],
+        ['researching', '추가 데이터 검증 중...'],
+        ['writing', '리포트 초안 작성 중...'],
+      ];
+      let rIdx = 0;
+      const researchCycle = () => {
+        const dr2 = this.engine.chars.get('deep_researcher');
+        if (!dr2 || !dr2.visible) return;
+        const [action, label] = activities[rIdx % activities.length];
+        dr2.applyAction(action, label);
+        dr2.startWork(label);
+        rIdx++;
+        this._choreographyTimers.push(setTimeout(researchCycle, 20000));
+      };
+      this._choreographyTimers.push(setTimeout(researchCycle, 15000));
+    } else if (intType === 'clarifying_questions') {
+      /* ══ Clarifying questions answered: Leaders gather at CEO office immediately ══
+         This creates visual coherence — leaders walk to CEO for planning discussion
+         BEFORE the backend scene_change arrives (which takes seconds). */
+      if (ceo && ceo.path.length === 0) {
+        ceo.applyAction('thinking', '답변 분석 중... 리더 소집');
+      }
+      this.engine.setLitRooms(['ceo_office']);
+      /* Move all leader characters to CEO office */
+      for (const ch of this.engine.chars.values()) {
+        if (ch.role === 'leader' && ch.visible) {
+          ch.moveTo('ceo_office');
+        }
+      }
+      /* Also recruit idle Tier 2 leader NPCs — they may not have role='leader' yet */
+      if (this._npcManager) {
+        for (const [npcId, state] of this._npcManager._npcs) {
+          if (state.tier === 2 && state.npcState === 'npc_idle') {
+            const nCh = this.engine.chars.get(npcId);
+            if (nCh && nCh.visible) nCh.moveTo('ceo_office');
+          }
+        }
+      }
+    } else {
+      /* Non-research interrupts: normal processing feedback */
+      if (ceo && ceo.path.length === 0) {
+        if (intType === 'result_review' || intType === 'research_review' || intType === 'plan_review') {
+          ceo.applyAction('reviewing', '리뷰 결과 처리 중...');
+        } else {
+          ceo.applyAction('thinking', '답변 분석 중...');
+        }
+      }
+    }
+    this._flushQueue();
+  }
+
+  _flushQueue() {
+    const queued = this._eventQueue.splice(0);
+    for (const ev of queued) this._handle(ev);
+  }
+
+  _onComplete(d) {
+    const ov = document.getElementById('done-ov');
+    const ct = document.getElementById('done-c');
+    while (ct.firstChild) ct.removeChild(ct.firstChild);
+
+    /* Icon */
+    const icon = document.createElement('div');
+    icon.style.cssText = 'font-size:2.8em;line-height:1;margin-bottom:6px;';
+    icon.textContent = '\uD83C\uDF89';
+    ct.appendChild(icon);
+
+    /* Heading with gradient text */
+    const h = document.createElement('h2');
+    h.textContent = 'Work Complete!';
+    h.style.cssText = 'font-size:1.5em;font-weight:700;background:linear-gradient(135deg,var(--green),#58d68d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px;';
+    ct.appendChild(h);
+
+    /* Session pill */
+    if (d.session_id) {
+      const pill = document.createElement('span');
+      pill.style.cssText = 'display:inline-block;padding:3px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:20px;font-size:0.76em;color:var(--dim);font-variant-numeric:tabular-nums;letter-spacing:0.04em;';
+      pill.textContent = 'Session ' + d.session_id;
+      ct.appendChild(pill);
+    }
+
+    /* Elapsed time */
+    if (this.startTime) {
+      const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+      const m = Math.floor(elapsed / 60), s = elapsed % 60;
+      const tp = document.createElement('p');
+      tp.style.cssText = 'color:var(--green);margin-top:14px;font-size:1.05em;font-weight:500;';
+      tp.textContent = '\u23F1 ' + m + '\uBD84 ' + s + '\uCD08';
+      ct.appendChild(tp);
+    }
+
+    /* Separator */
+    const sep = document.createElement('div');
+    sep.style.cssText = 'width:64px;height:2px;background:linear-gradient(90deg,var(--red),var(--purple));margin:22px auto;border-radius:1px;';
+    ct.appendChild(sep);
+
+    /* Button group */
+    const grp = document.createElement('div');
+    grp.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+
+    /* "결과물 보기" — primary CTA (blue gradient, wide) */
+    if (d.report_path) {
+      const sid = d.report_path.split('/').pop();
+      const viewBtn = document.createElement('button');
+      viewBtn.style.cssText = 'background:linear-gradient(135deg,#3498db,#2176ae);color:#fff;padding:13px 0;font-size:0.95em;width:100%;max-width:260px;border-radius:12px;';
+      viewBtn.textContent = '\uD83D\uDCC4 \uACB0\uACFC\uBB3C \uBCF4\uAE30';
+      viewBtn.addEventListener('click', () => window.open('/reports/' + sid + '/results.html', '_blank'));
+      grp.appendChild(viewBtn);
+    }
+
+    /* "확인" — secondary (subtle) */
+    const btn = document.createElement('button');
+    btn.className = 'bs';
+    btn.style.cssText = 'padding:10px 32px;font-size:0.86em;';
+    btn.textContent = '\uD655\uC778';
+    btn.addEventListener('click', () => {
+      ov.classList.add('h');
+      this._startCelebrationChoreography();
+      this._showNewTaskButton();
+    });
+    grp.appendChild(btn);
+    ct.appendChild(grp);
+
+    ov.classList.remove('h');
+    this.stopTimer();
+    if (this._progressPanel) this._progressPanel.reset();
+    this.addLog('Complete!', 'system');
+    /* Celebrate: all rooms full brightness */
+    this.engine.setLitRooms(Object.keys(ROOMS));
+    this.engine.triggerConfetti();
+    setTimeout(() => this.engine.triggerConfetti(), 1500);
+    for (const ch of this.engine.chars.values()) { ch.stopWork(); ch.moveTo('boardroom'); ch.progress = -1; }
+    /* NPC: pause all wandering during celebration, then dismiss */
+    if (this._npcManager) {
+      this._npcManager.activateUser('completion');
+      /* Freeze all NPCs into 'recruited' so wandering AI doesn't interfere with celebration */
+      for (const [, state] of this._npcManager._npcs) {
+        if (state.npcState === 'npc_idle') state.npcState = 'recruited';
+        if (state.ambientAction) state.ambientAction = null;
+      }
+      /* Dismiss all NPCs back to wandering after celebration delay */
+      setTimeout(() => {
+        if (this._npcManager) {
+          this._npcManager.dismissAll();
+          /* Release non-recruited NPCs that were frozen for celebration */
+          for (const [npcId, state] of this._npcManager._npcs) {
+            if (state.tier >= 2 && state.npcState === 'recruited' && !state.recruitedAsId) {
+              state.npcState = 'npc_idle';
+              state.dwellTimer = NPC_CONFIG.WANDER_DWELL_MIN;
+              const ch = this._npcManager.engine.chars.get(npcId);
+              if (ch) { ch.name = state.originalName; ch.shirt = state.originalColor; ch.emoji = state.originalEmoji; ch.role = state.originalRole; ch.gender = state.originalGender; ch.hairStyle = state.originalHairStyle; ch._backendId = null; ch.stopWork(); ch.progress = -1; }
+            }
+          }
+          this._npcManager.deactivateTier1('ceo');
+          this._npcManager.deactivateTier1('deep_researcher');
+          this._npcManager.activateUser('idle');
+        }
+      }, NPC_CONFIG.DISMISS_DELAY / 60 * 1000);
+    }
+  }
+
+  _startCelebrationChoreography() {
+    const msgs = ['수고했어요!', '대성공!', '축하합니다!', '완벽해요!', '최고!', '잘했어요!', '파티!', '우리가 해냈다!'];
+    const states = ['presenting', 'idle', 'thinking'];
+    const chars = [...this.engine.chars.values()];
+    if (!chars.length) return;
+
+    /* Immediate: give every character a celebration bubble */
+    for (const ch of chars) {
+      ch.state = states[Math.floor(Math.random() * states.length)];
+      ch.setBubble(msgs[Math.floor(Math.random() * msgs.length)], 3000 + Math.random() * 2000);
+    }
+
+    /* Cycling: rotate states and bubbles every 5 seconds */
+    const cycle = () => {
+      for (const ch of chars) {
+        ch.state = states[Math.floor(Math.random() * states.length)];
+        ch.setBubble(msgs[Math.floor(Math.random() * msgs.length)], 3000 + Math.random() * 2000);
+      }
+      this._choreographyTimers.push(setTimeout(cycle, 5000 + Math.random() * 3000));
+    };
+    this._choreographyTimers.push(setTimeout(cycle, 5000));
+
+    /* Periodic confetti every 30 seconds */
+    const confettiLoop = () => {
+      this.engine.triggerConfetti();
+      this._choreographyTimers.push(setTimeout(confettiLoop, 30000));
+    };
+    this._choreographyTimers.push(setTimeout(confettiLoop, 30000));
+  }
+
+  _showNewTaskButton() {
+    /* Remove existing button if any (prevent duplicates) */
+    const existing = document.getElementById('new-task-fab');
+    if (existing) existing.remove();
+
+    const fab = document.createElement('button');
+    fab.id = 'new-task-fab';
+    fab.textContent = 'New Task';
+    fab.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:90;padding:12px 24px;border:none;border-radius:12px;background:var(--red);color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:transform .3s,filter .15s,opacity .3s;transform:translateY(60px);opacity:0;';
+    /* Slide-in animation */
+    requestAnimationFrame(() => requestAnimationFrame(() => { fab.style.transform = 'translateY(0)'; fab.style.opacity = '1'; }));
+    fab.addEventListener('mouseenter', () => { fab.style.transform = 'translateY(-2px)'; fab.style.filter = 'brightness(1.15)'; });
+    fab.addEventListener('mouseleave', () => { fab.style.transform = 'translateY(0)'; fab.style.filter = ''; });
+    fab.addEventListener('click', () => location.reload());
+    document.body.appendChild(fab);
+  }
+
+  _onError(d) {
+    this.addLog('ERROR: ' + (d.message || 'Unknown'), 'error');
+    this.engine._errorFade = 1;
+    /* Toast notification */
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:56px;right:16px;z-index:110;padding:10px 18px;background:#e74c3c;color:#fff;border-radius:8px;font-size:0.82em;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.3);animation:fi .3s;max-width:320px;';
+    toast.textContent = d.message || 'Unknown error';
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .3s'; setTimeout(() => toast.remove(), 300); }, 5000);
+  }
+
+  addLog(text, style) {
+    const e = document.createElement('div');
+    e.className = 'le ' + (style || 'system');
+    const ts = document.createElement('span');
+    ts.className = 't';
+    ts.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    e.appendChild(ts);
+    const sp = document.createElement('span');
+    sp.textContent = text;
+    e.appendChild(sp);
+    this.logEl.appendChild(e);
+    this.logEl.parentElement.scrollTop = this.logEl.parentElement.scrollHeight;
+    while (this.logEl.children.length > 200) this.logEl.removeChild(this.logEl.firstChild);
+  }
+
+  startTimer() {
+    this.startTime = Date.now();
+    this.timerIv = setInterval(() => {
+      const s = Math.floor((Date.now() - this.startTime) / 1000);
+      document.getElementById('timer').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+  }
+  stopTimer() {
+    if (this.timerIv) clearInterval(this.timerIv);
+    /* Freeze the final elapsed time on display */
+    if (this.startTime) {
+      const s = Math.floor((Date.now() - this.startTime) / 1000);
+      document.getElementById('timer').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §5b  WORKER PROGRESS PANEL
+   ═══════════════════════════════════════════════════ */
+class ProgressPanel {
+  constructor() {
+    this.el = document.getElementById('wp-panel');
+    this.grid = document.getElementById('wp-grid');
+    this.overallFill = document.getElementById('wp-overall-fill');
+    this.doneEl = document.getElementById('wp-done');
+    this.totalEl = document.getElementById('wp-total');
+    this.runningEl = document.getElementById('wp-running');
+    this.elapsedEl = document.getElementById('wp-elapsed');
+    this.toggleBtn = document.getElementById('wp-toggle');
+    this.workers = new Map(); /* name → { el, barFill, pctEl, dotEl, summaryEl, progress, status } */
+    this._collapsed = false;
+    this._timerIv = null;
+    this._startTs = 0;
+
+    this.toggleBtn.addEventListener('click', () => this.toggle());
+  }
+
+  show() {
+    this.el.classList.add('show');
+    this._startTs = Date.now();
+    this._timerIv = setInterval(() => this._tickElapsed(), 1000);
+    this._tickElapsed();
+  }
+
+  hide() {
+    this.el.classList.remove('show');
+    if (this._timerIv) { clearInterval(this._timerIv); this._timerIv = null; }
+  }
+
+  reset() {
+    this.hide();
+    this.workers.clear();
+    while (this.grid.firstChild) this.grid.removeChild(this.grid.firstChild);
+    this.doneEl.textContent = '0';
+    this.totalEl.textContent = '0';
+    this.runningEl.textContent = '0';
+    this.elapsedEl.textContent = '0:00';
+    this.overallFill.style.width = '0%';
+    this._collapsed = false;
+    this.grid.style.display = '';
+    this.toggleBtn.textContent = '접기';
+  }
+
+  toggle() {
+    this._collapsed = !this._collapsed;
+    this.grid.style.display = this._collapsed ? 'none' : '';
+    this.toggleBtn.textContent = this._collapsed ? '펼치기' : '접기';
+  }
+
+  /** Populate rows from hierarchy data */
+  populateFromHierarchy(leaders) {
+    while (this.grid.firstChild) this.grid.removeChild(this.grid.firstChild);
+    this.workers.clear();
+    for (const l of (leaders || [])) {
+      for (const w of (l.workers || [])) {
+        this._addRow(w, l.domain);
+      }
+    }
+    this.totalEl.textContent = String(this.workers.size);
+    this._updateStats();
+  }
+
+  _addRow(name, domain) {
+    if (this.workers.has(name)) return;
+    const row = document.createElement('div');
+    row.className = 'wp-row';
+
+    const dot = document.createElement('span');
+    dot.className = 'wp-dot pending';
+    row.appendChild(dot);
+
+    const nm = document.createElement('span');
+    nm.className = 'wp-name';
+    nm.textContent = name.replace(/^worker-/, '').replace(/-\d+$/, '');
+    nm.title = name;
+    row.appendChild(nm);
+
+    const barWrap = document.createElement('span');
+    barWrap.className = 'wp-bar-wrap';
+    const barFill = document.createElement('span');
+    barFill.className = 'wp-bar-fill low';
+    barFill.style.width = '0%';
+    barWrap.appendChild(barFill);
+    row.appendChild(barWrap);
+
+    const pct = document.createElement('span');
+    pct.className = 'wp-pct';
+    pct.textContent = '0%';
+    row.appendChild(pct);
+
+    const summary = document.createElement('span');
+    summary.className = 'wp-summary';
+    summary.textContent = domain || '';
+    row.appendChild(summary);
+
+    this.grid.appendChild(row);
+    this.workers.set(name, { el: row, barFill, pctEl: pct, dotEl: dot, summaryEl: summary, progress: 0, status: 'pending' });
+  }
+
+  /** Update a single worker's progress (called from _onProgress) */
+  update(name, progress, status, summary) {
+    let w = this.workers.get(name);
+    if (!w) {
+      /* Worker appeared without hierarchy — create row dynamically */
+      this._addRow(name, '');
+      this.totalEl.textContent = String(this.workers.size);
+      w = this.workers.get(name);
+    }
+    const pct = Math.round(progress * 100);
+    w.progress = progress;
+    w.status = status;
+    w.barFill.style.width = pct + '%';
+    w.pctEl.textContent = pct + '%';
+    /* Color class: low(<33%), mid(33-66%), high(>66%) */
+    w.barFill.className = 'wp-bar-fill ' + (pct < 33 ? 'low' : pct < 67 ? 'mid' : 'high');
+    /* Dot status */
+    w.dotEl.className = 'wp-dot ' + (status === 'done' ? 'done' : status === 'failed' ? 'failed' : progress > 0 ? 'running' : 'pending');
+    /* Row class */
+    w.el.className = 'wp-row' + (status === 'done' ? ' done' : status === 'failed' ? ' failed' : '');
+    if (summary) w.summaryEl.textContent = summary;
+    this._updateStats();
+  }
+
+  _updateStats() {
+    let done = 0, running = 0, totalProg = 0;
+    for (const [, w] of this.workers) {
+      if (w.status === 'done') { done++; totalProg += 1; }
+      else if (w.status === 'failed') { done++; totalProg += 1; }
+      else { if (w.progress > 0) running++; totalProg += w.progress; }
+    }
+    this.doneEl.textContent = String(done);
+    this.runningEl.textContent = String(running);
+    const total = this.workers.size || 1;
+    this.overallFill.style.width = Math.round((totalProg / total) * 100) + '%';
+  }
+
+  _tickElapsed() {
+    const s = Math.floor((Date.now() - this._startTs) / 1000);
+    this.elapsedEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §6  INTERRUPT UI
+   ═══════════════════════════════════════════════════ */
+class InterruptUI {
+  static render(data, ct, rnd) {
+    const t = data.interrupt_type || data.type || '';
+    switch (t) {
+      case 'clarifying_questions': this._questions(data, ct, rnd); break;
+      case 'result_review': this._resultReview(data, ct, rnd); break;
+      case 'plan_review': this._planReview(data, ct, rnd); break;
+      case 'research_review': this._researchReview(data, ct, rnd); break;
+      case 'research_clarification': this._researchQ(data, ct, rnd); break;
+      default: {
+        const p = document.createElement('p'); p.textContent = 'Interrupt: ' + t; ct.appendChild(p);
+        const b = document.createElement('button'); b.className = 'bp'; b.textContent = 'OK';
+        b.addEventListener('click', () => rnd.submitInterrupt('ok')); ct.appendChild(b);
+      }
+    }
+  }
+
+  static _questions(data, ct, rnd) {
+    const h = document.createElement('h2'); h.textContent = '\uD83D\uDCAC Leader Questions'; h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    const sub = document.createElement('p'); sub.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 14px;'; sub.textContent = 'Please answer the questions from each domain leader.'; ct.appendChild(sub);
+    const areas = {};
+    for (const [domain, qs] of Object.entries(data.questions || {})) {
+      const sec = document.createElement('div'); sec.className = 'ds';
+      const h3 = document.createElement('h3'); h3.textContent = domain + ' Leader'; h3.style.color = 'var(--green)'; sec.appendChild(h3);
+      areas[domain] = [];
+      (qs || []).forEach((q, i) => {
+        const d = document.createElement('div'); d.className = 'qi';
+        const p = document.createElement('p'); p.textContent = (i + 1) + '. ' + q; d.appendChild(p);
+        const ta = document.createElement('textarea'); ta.placeholder = 'Answer...'; ta.rows = 2; d.appendChild(ta);
+        sec.appendChild(d); areas[domain].push(ta);
+      });
+      ct.appendChild(sec);
+    }
+    const btn = document.createElement('button'); btn.className = 'bp'; btn.textContent = 'Submit';
+    btn.addEventListener('click', () => {
+      const ans = {};
+      for (const [dm, tas] of Object.entries(areas)) ans[dm] = tas.map(ta => ta.value || 'Proceed with best judgment.');
+      rnd.submitInterrupt(ans);
+    });
+    ct.appendChild(btn);
+  }
+
+  static _resultReview(data, ct, rnd) {
+    const h = document.createElement('h2'); h.textContent = '\uD83D\uDCCB Result Review'; h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    const sub = document.createElement('p'); sub.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 10px;'; sub.textContent = 'Review the results and choose an action.'; ct.appendChild(sub);
+    if (data.summary) { const pre = document.createElement('pre'); pre.className = 'rs'; pre.textContent = data.summary; ct.appendChild(pre); }
+    const acts = document.createElement('div'); acts.className = 'ra';
+    const cb = document.createElement('button'); cb.className = 'bc'; cb.textContent = '\u2705 Confirm';
+    cb.addEventListener('click', () => rnd.submitInterrupt({ action: 'confirm' })); acts.appendChild(cb);
+    const rb = document.createElement('button'); rb.className = 'bs'; rb.textContent = '\u270F\uFE0F Revise'; acts.appendChild(rb);
+    const ab = document.createElement('button'); ab.className = 'bd'; ab.textContent = '\u23F9 Abort';
+    ab.addEventListener('click', () => rnd.submitInterrupt({ action: 'abort' })); acts.appendChild(ab);
+    ct.appendChild(acts);
+    const rd = document.createElement('div'); rd.style.display = 'none'; rd.style.marginTop = '10px';
+    const ta = document.createElement('textarea'); ta.placeholder = 'Feedback...'; rd.appendChild(ta);
+    const sb = document.createElement('button'); sb.className = 'bp'; sb.textContent = 'Submit'; sb.style.marginTop = '6px';
+    sb.addEventListener('click', () => rnd.submitInterrupt({ action: 'revise', feedback: ta.value })); rd.appendChild(sb);
+    ct.appendChild(rd);
+    rb.addEventListener('click', () => { rd.style.display = rd.style.display === 'none' ? 'block' : 'none'; });
+  }
+
+  static _planReview(data, ct, rnd) {
+    /* ── Header ── */
+    const h = document.createElement('h2');
+    h.textContent = '\uD83D\uDCCB \uC2E4\uD589 \uACC4\uD68D \uB9AC\uBDF0';
+    h.style.cssText = 'font-size:1.3em;';
+    ct.appendChild(h);
+    const sub = document.createElement('p');
+    sub.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 14px;';
+    sub.textContent = '\uC6CC\uCEE4 \uC2E4\uD589 \uC804 \uACC4\uD68D\uC744 \uD655\uC778\uD558\uC138\uC694. \uC218\uC815 \uB610\uB294 \uC911\uB2E8\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.';
+    ct.appendChild(sub);
+
+    /* ── Parse & render plan summary ── */
+    if (data.summary) {
+      const lines = data.summary.split('\n');
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'max-height:320px;overflow-y:auto;margin-bottom:12px;';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        if (line.startsWith('\uCD1D ')) {
+          /* Worker count header badge */
+          const badge = document.createElement('div');
+          badge.style.cssText = 'padding:6px 14px;background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.3);border-radius:8px;font-size:0.92em;color:var(--blue,#4A90D9);margin-bottom:10px;font-weight:600;';
+          badge.textContent = line;
+          wrap.appendChild(badge);
+        } else if (/^\[.+\]/.test(line) && !line.trim().startsWith('- ')) {
+          /* Domain header [domain] */
+          const domH = document.createElement('div');
+          domH.style.cssText = 'margin-top:10px;padding:4px 10px;background:rgba(255,255,255,0.06);border-radius:6px;font-weight:600;font-size:0.9em;color:var(--green,#50C878);';
+          domH.textContent = line;
+          wrap.appendChild(domH);
+        } else if (line.trim().startsWith('- ')) {
+          /* Worker detail line */
+          const wl = document.createElement('div');
+          wl.style.cssText = 'padding:3px 10px 3px 20px;font-size:0.84em;color:var(--fg);line-height:1.5;';
+          wl.textContent = line.trim();
+          wrap.appendChild(wl);
+        } else {
+          /* Fallback: plain text */
+          const pl = document.createElement('div');
+          pl.style.cssText = 'padding:2px 10px;font-size:0.84em;color:var(--dim);';
+          pl.textContent = line;
+          wrap.appendChild(pl);
+        }
+      }
+      ct.appendChild(wrap);
+    }
+
+    /* ── Instructions ── */
+    if (data.instructions) {
+      const inst = document.createElement('div');
+      inst.style.cssText = 'padding:8px 12px;background:rgba(255,255,255,0.03);border-left:3px solid var(--dim);border-radius:4px;font-size:0.78em;color:var(--dim);margin-bottom:12px;white-space:pre-line;';
+      inst.textContent = data.instructions;
+      ct.appendChild(inst);
+    }
+
+    /* ── Action buttons: Confirm / Revise / Abort ── */
+    const acts = document.createElement('div'); acts.className = 'ra';
+    const cb = document.createElement('button'); cb.className = 'bc'; cb.textContent = '\u2705 \uC2E4\uD589';
+    cb.addEventListener('click', () => rnd.submitInterrupt({ action: 'confirm' })); acts.appendChild(cb);
+    const rb = document.createElement('button'); rb.className = 'bs'; rb.textContent = '\u270F\uFE0F \uC218\uC815 \uC694\uCCAD'; acts.appendChild(rb);
+    const ab = document.createElement('button'); ab.className = 'bd'; ab.textContent = '\u23F9 \uC911\uB2E8';
+    ab.addEventListener('click', () => rnd.submitInterrupt({ action: 'abort' })); acts.appendChild(ab);
+    ct.appendChild(acts);
+
+    /* ── Revise textarea (hidden until clicked) ── */
+    const rd = document.createElement('div'); rd.style.display = 'none'; rd.style.marginTop = '10px';
+    const ta = document.createElement('textarea'); ta.placeholder = '\uC218\uC815 \uC0AC\uD56D\uC744 \uC785\uB825\uD558\uC138\uC694... (\uC608: \uC6CC\uCEE4 A\uC758 \uBC94\uC704\uB97C \uC881\uD600\uC8FC\uC138\uC694)'; rd.appendChild(ta);
+    const sb = document.createElement('button'); sb.className = 'bp'; sb.textContent = 'Submit'; sb.style.marginTop = '6px';
+    sb.addEventListener('click', () => rnd.submitInterrupt({ action: 'revise', feedback: ta.value })); rd.appendChild(sb);
+    ct.appendChild(rd);
+    rb.addEventListener('click', () => { rd.style.display = rd.style.display === 'none' ? 'block' : 'none'; });
+  }
+
+  static _researchReview(data, ct, rnd) {
+    const h = document.createElement('h2'); h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    h.textContent = '\uD83D\uDD0D Research Review';
+    const badge = document.createElement('span'); badge.style.cssText = 'display:inline-block;margin-left:8px;padding:2px 10px;background:rgba(155,89,182,0.2);border:1px solid rgba(155,89,182,0.3);border-radius:12px;font-size:0.65em;vertical-align:middle;color:var(--purple);font-weight:500;'; badge.textContent = 'Round ' + (data.review_round || 1); h.appendChild(badge);
+
+    /* Summary text (plain-text from _strip_html) */
+    if (data.summary) {
+      const pre = document.createElement('pre');
+      pre.className = 'rs';
+      pre.style.cssText += 'max-height:260px;overflow-y:auto;';
+      pre.textContent = data.summary;
+      ct.appendChild(pre);
+    }
+
+    /* "전문 보기" button — opens full HTML report in new tab */
+    if (data.report_path) {
+      const m = data.report_path.match(/reports\/([^/]+)/);
+      if (m) {
+        const viewBtn = document.createElement('button');
+        viewBtn.style.cssText = 'display:block;margin:10px auto 4px;padding:10px 28px;background:linear-gradient(135deg,#9b59b6,#8e44ad);color:#fff;border:none;border-radius:10px;font-size:0.92em;cursor:pointer;font-weight:600;letter-spacing:0.02em;transition:opacity .15s;';
+        viewBtn.textContent = '\uD83D\uDCC4 \uC804\uBB38 \uBCF4\uAE30';
+        viewBtn.addEventListener('mouseenter', () => { viewBtn.style.opacity = '0.85'; });
+        viewBtn.addEventListener('mouseleave', () => { viewBtn.style.opacity = '1'; });
+        viewBtn.addEventListener('click', () => window.open('/reports/' + m[1] + '/results.html', '_blank'));
+        ct.appendChild(viewBtn);
+      }
+    }
+
+    /* Action buttons: Confirm / Revise */
+    const acts = document.createElement('div'); acts.className = 'ra';
+    const cb = document.createElement('button'); cb.className = 'bc'; cb.textContent = '\u2705 Confirm';
+    cb.addEventListener('click', () => rnd.submitInterrupt({ action: 'confirm' })); acts.appendChild(cb);
+    const rb = document.createElement('button'); rb.className = 'bs'; rb.textContent = '\u270F\uFE0F Revise'; acts.appendChild(rb);
+    ct.appendChild(acts);
+    const rd = document.createElement('div'); rd.style.display = 'none'; rd.style.marginTop = '10px';
+    const ta = document.createElement('textarea'); ta.placeholder = '\uBBF8\uD754\uD55C \uBD80\uBD84, \uBCF4\uC644 \uC694\uCCAD, \uCD94\uAC00 \uC870\uC0AC \uB4F1 \uD53C\uB4DC\uBC31\uC744 \uC785\uB825\uD558\uC138\uC694...'; rd.appendChild(ta);
+    const sb = document.createElement('button'); sb.className = 'bp'; sb.textContent = 'Submit'; sb.style.marginTop = '6px';
+    sb.addEventListener('click', () => rnd.submitInterrupt({ action: 'revise', feedback: ta.value })); rd.appendChild(sb);
+    ct.appendChild(rd);
+    rb.addEventListener('click', () => { rd.style.display = rd.style.display === 'none' ? 'block' : 'none'; });
+  }
+
+  static _researchQ(data, ct, rnd) {
+    const h = document.createElement('h2'); h.textContent = '\uD83D\uDD2C Research Clarification'; h.style.cssText = 'font-size:1.3em;'; ct.appendChild(h);
+    if (data.domain) { const p = document.createElement('p'); p.style.cssText = 'color:var(--dim);font-size:0.84em;margin:-8px 0 10px;'; p.textContent = 'Domain: ' + data.domain; ct.appendChild(p); }
+    const areas = [];
+    (data.questions || []).forEach((q, i) => {
+      const d = document.createElement('div'); d.className = 'qi';
+      const p = document.createElement('p'); p.textContent = (i + 1) + '. ' + q; d.appendChild(p);
+      const ta = document.createElement('textarea'); ta.placeholder = 'Answer...'; ta.rows = 2; d.appendChild(ta);
+      ct.appendChild(d); areas.push(ta);
+    });
+    const btn = document.createElement('button'); btn.className = 'bp'; btn.textContent = 'Submit';
+    btn.addEventListener('click', () => rnd.submitInterrupt(areas.map(ta => ta.value || 'Proceed.')));
+    ct.appendChild(btn);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §6B  INTERACTION MANAGER — Phase 3
+   ═══════════════════════════════════════════════════ */
+class InteractionManager {
+  constructor(engine, sim) {
+    this.engine = engine;
+    this.sim = sim;
+    this._charPopup = null;
+    this._roomTooltip = null;
+    this._pinTooltip = null;
+    this._hoveredRoom = null;
+    this._pendingClick = null;  /* Phase 4A: deferred click when zoomed */
+    this._pendingClickTimer = null;
+    this._minimapHover = false; /* Phase 4A: minimap hover state */
+    this._init();
+  }
+
+  _init() {
+    /* Phase 4A: Minimap click must register first (uses stopImmediatePropagation) */
+    this._setupMinimapClick();
+    this._setupZoom();
+    this._setupPan();
+    this._setupCharClick();
+    this._setupRoomHover();
+    this._setupBubblePin();
+    this._setupSidebarClick();
+    this._setupDismiss();
+  }
+
+  /* ── Utility: mouse event → world coords (zoom/pan aware) ── */
+  _canvasCoords(e) {
+    const rect = this.engine.cv.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
+    const canvasX = (e.clientX - rect.left) / rect.width * W;
+    const canvasY = (e.clientY - rect.top) / rect.height * H;
+    const zoom = this.engine._zoom || 1;
+    /* Invert zoom/pan to get world coordinates */
+    return {
+      x: (canvasX - (this.engine._panX || 0)) / zoom,
+      y: (canvasY - (this.engine._panY || 0)) / zoom,
+    };
+  }
+
+  /* ── Utility: world coords → screen position (zoom/pan aware) ── */
+  _canvasToScreen(wx, wy) {
+    const rect = this.engine.cv.getBoundingClientRect();
+    /* Apply zoom/pan to get canvas coords, then map to screen */
+    const canvasX = wx * this.engine._zoom + this.engine._panX;
+    const canvasY = wy * this.engine._zoom + this.engine._panY;
+    return {
+      x: canvasX / W * rect.width + rect.left,
+      y: canvasY / H * rect.height + rect.top,
+    };
+  }
+
+  /* ── Utility: find character near canvas point ── */
+  _findCharAt(cx, cy) {
+    let best = null, bestDist = 20;
+    for (const ch of this.engine.chars.values()) {
+      if (!ch.visible) continue;
+      const dx = ch.x - cx, dy = (ch.y - 10) - cy; /* offset for head center */
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < bestDist) { bestDist = dist; best = ch; }
+    }
+    return best;
+  }
+
+  /* ── Utility: find room at canvas point ── */
+  _findRoomAt(cx, cy) {
+    for (const [id, r] of Object.entries(ROOMS)) {
+      if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) return r;
+    }
+    return null;
+  }
+
+  /* ── Utility: position element clamped to viewport ── */
+  _clampPosition(el, sx, sy) {
+    el.style.left = sx + 'px';
+    el.style.top = sy + 'px';
+    /* After render, clamp to viewport */
+    requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      let nx = sx, ny = sy;
+      if (rect.right > window.innerWidth - 8) nx -= rect.right - window.innerWidth + 8;
+      if (rect.bottom > window.innerHeight - 8) ny -= rect.bottom - window.innerHeight + 8;
+      if (rect.left < 8) nx += 8 - rect.left;
+      if (rect.top < 8) ny += 8 - rect.top;
+      el.style.left = nx + 'px'; el.style.top = ny + 'px';
+    });
+  }
+
+  /* ── Feature 1: Character click detail popup ── */
+  _setupCharClick() {
+    this.engine.cv.addEventListener('pointerdown', (e) => {
+      if (this.sim._modalOpen) return;
+      if (e.button === 1) return; /* middle-click handled by _setupPan */
+      /* Phase 4A: If zoomed in, left-click may start a pan drag.
+         We record the start position and defer the click decision
+         to pointerup (via _panDragState). */
+      if (e.button === 0 && this.engine._zoom > 1.001) {
+        this._pendingClick = { clientX: e.clientX, clientY: e.clientY, event: e };
+        /* Safety: clear stale pending click after 500ms if pointerup never fires */
+        clearTimeout(this._pendingClickTimer);
+        this._pendingClickTimer = setTimeout(() => { this._pendingClick = null; }, 500);
+        return; /* _setupPan's pointerup will call _handleClickIfNotDrag */
+      }
+      this._doCharClick(e);
+    });
+  }
+
+  /* Separated click logic so _setupPan can call it when drag threshold not met */
+  _doCharClick(e) {
+    const { x, y } = this._canvasCoords(e);
+
+    /* Check bubble pin first (Feature 3) */
+    if (this._handleBubbleClick(x, y, e)) return;
+
+    const ch = this._findCharAt(x, y);
+    if (!ch) { this._dismissCharPopup(); return; }
+
+    this._showCharPopup(ch, e.clientX, e.clientY);
+  }
+
+  _showCharPopup(ch, mouseX, mouseY) {
+    this._dismissCharPopup();
+    this._dismissPinTooltip();
+
+    const wrap = document.createElement('div');
+    wrap.className = 'char-popup';
+    const card = document.createElement('div');
+    card.className = 'cp-card';
+
+    /* Close button */
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'cp-close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.addEventListener('click', () => this._dismissCharPopup());
+    card.appendChild(closeBtn);
+
+    /* Header: emoji + name + title */
+    const header = document.createElement('div');
+    header.className = 'cp-header';
+    const emojiSpan = document.createElement('span');
+    emojiSpan.className = 'cp-emoji';
+    emojiSpan.textContent = ch.emoji || '\uD83D\uDC64';
+    const nameBlock = document.createElement('div');
+    const nameEl = document.createElement('div');
+    nameEl.className = 'cp-name';
+    nameEl.textContent = ch.name;
+    nameBlock.appendChild(nameEl);
+    if (ch.title) {
+      const titleEl = document.createElement('div');
+      titleEl.className = 'cp-title';
+      titleEl.textContent = ch.title;
+      nameBlock.appendChild(titleEl);
+    }
+    header.appendChild(emojiSpan);
+    header.appendChild(nameBlock);
+    card.appendChild(header);
+
+    /* Info rows */
+    const rows = [
+      ['State', ch.state],
+      ['Room', ch.currentRoom ? (ROOMS[ch.currentRoom]?.label || ch.currentRoom) : 'Corridor'],
+    ];
+    if (ch.domain) rows.push(['Domain', ch.domain]);
+    if (ch._workLabel) rows.push(['Task', ch._workLabel]);
+    for (const [label, value] of rows) {
+      const row = document.createElement('div');
+      row.className = 'cp-row';
+      const lbl = document.createElement('span'); lbl.className = 'cp-label'; lbl.textContent = label;
+      const val = document.createElement('span'); val.className = 'cp-value'; val.textContent = value;
+      row.appendChild(lbl); row.appendChild(val);
+      card.appendChild(row);
+    }
+
+    /* Progress bar (if active) */
+    if (ch.progress >= 0 && ch.progress <= 1) {
+      const pct = Math.round(ch.progress * 100);
+      const pRow = document.createElement('div'); pRow.className = 'cp-row';
+      const pLbl = document.createElement('span'); pLbl.className = 'cp-label'; pLbl.textContent = 'Progress';
+      const pVal = document.createElement('span'); pVal.className = 'cp-value'; pVal.textContent = pct + '%';
+      pRow.appendChild(pLbl); pRow.appendChild(pVal);
+      card.appendChild(pRow);
+      const pBar = document.createElement('div'); pBar.className = 'cp-progress';
+      const pFill = document.createElement('div'); pFill.className = 'cp-progress-bar'; pFill.style.width = pct + '%';
+      pBar.appendChild(pFill); card.appendChild(pBar);
+    }
+
+    /* Recent bubbles */
+    if (ch._recentBubbles.length > 0) {
+      const bubbles = document.createElement('div'); bubbles.className = 'cp-bubbles';
+      const bh = document.createElement('h4'); bh.textContent = 'Recent Activity';
+      bubbles.appendChild(bh);
+      for (const b of ch._recentBubbles.slice(-5)) {
+        const bi = document.createElement('div'); bi.className = 'cp-bubble-item';
+        bi.textContent = '\u2022 ' + b;
+        bubbles.appendChild(bi);
+      }
+      card.appendChild(bubbles);
+    }
+
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+    this._charPopup = wrap;
+    this._clampPosition(wrap, mouseX + 12, mouseY - 20);
+  }
+
+  _dismissCharPopup() {
+    if (this._charPopup) { this._charPopup.remove(); this._charPopup = null; }
+  }
+
+  /* ── Feature 2: Room hover tooltip ── */
+  _setupRoomHover() {
+    this.engine.cv.addEventListener('pointermove', (e) => {
+      if (this.sim._modalOpen) { this._dismissRoomTooltip(); return; }
+      const { x, y } = this._canvasCoords(e);
+      const room = this._findRoomAt(x, y);
+      if (!room) { this._dismissRoomTooltip(); this._hoveredRoom = null; return; }
+
+      if (this._hoveredRoom === room.id && this._roomTooltip) {
+        /* Same room — just reposition */
+        this._roomTooltip.style.left = (e.clientX + 14) + 'px';
+        this._roomTooltip.style.top = (e.clientY + 14) + 'px';
+        return;
+      }
+      this._hoveredRoom = room.id;
+      this._dismissRoomTooltip();
+
+      const tip = document.createElement('div');
+      tip.className = 'room-tooltip';
+
+      const name = document.createElement('div'); name.className = 'rt-name'; name.textContent = room.label;
+      tip.appendChild(name);
+
+      const domain = this.engine._roomDomains.get(room.id);
+      if (domain) {
+        const domEl = document.createElement('div'); domEl.className = 'rt-domain'; domEl.textContent = domain;
+        tip.appendChild(domEl);
+      }
+
+      /* Occupants */
+      const occupants = [];
+      for (const ch of this.engine.chars.values()) {
+        if (ch.currentRoom === room.id && ch.visible) occupants.push(ch.emoji + ' ' + ch.name);
+      }
+      if (occupants.length > 0) {
+        const occEl = document.createElement('div'); occEl.className = 'rt-occupants';
+        const occSpan = document.createElement('span'); occSpan.textContent = occupants.join(', ');
+        occEl.textContent = occupants.length + ' \uC7AC\uC2E4: '; /* 재실: */
+        occEl.appendChild(occSpan);
+        tip.appendChild(occEl);
+      } else {
+        const emptyEl = document.createElement('div'); emptyEl.className = 'rt-occupants'; emptyEl.textContent = '\uBE44\uC5B4\uC788\uC74C'; /* 비어있음 */
+        tip.appendChild(emptyEl);
+      }
+
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+      document.body.appendChild(tip);
+      this._roomTooltip = tip;
+    });
+
+    this.engine.cv.addEventListener('pointerleave', () => {
+      this._dismissRoomTooltip();
+      this._hoveredRoom = null;
+    });
+  }
+
+  _dismissRoomTooltip() {
+    if (this._roomTooltip) { this._roomTooltip.remove(); this._roomTooltip = null; }
+  }
+
+  /* ── Feature 3: Bubble pin ── */
+  _setupBubblePin() {
+    /* Handled via _handleBubbleClick, called from pointerdown in _setupCharClick */
+  }
+
+  _handleBubbleClick(cx, cy, e) {
+    const S = 1.8;
+    for (const ch of this.engine.chars.values()) {
+      if (!ch.bubble || !ch.visible) continue;
+      const isSitting = ch.state === 'sitting' || ch.state === 'typing';
+      const bodyY = ch.y - 12 * S;
+      const headY = bodyY - 5 * S;
+      const bby = (isSitting ? bodyY : headY) - 14 * S;
+      const bh = 18;
+      const bw = this.engine._pinnedBubbles.has(ch.id) ? 180 : 120;
+      const bx = ch.x - bw / 2;
+      if (cx >= bx && cx <= bx + bw && cy >= bby && cy <= bby + bh) {
+        /* Toggle pin */
+        if (this.engine._pinnedBubbles.has(ch.id)) {
+          /* Already pinned — show full text copy tooltip on second click */
+          if (this._pinTooltip) {
+            this._dismissPinTooltip();
+            this.engine._pinnedBubbles.delete(ch.id);
+            ch.bubbleExp = Date.now() + 3000;
+          } else {
+            this._showPinTooltip(ch, e.clientX, e.clientY);
+          }
+        } else {
+          this.engine._pinnedBubbles.add(ch.id);
+          ch.bubbleExp = Date.now() + 86400000; /* 24h = effectively permanent */
+          this._dismissPinTooltip();
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _showPinTooltip(ch, mx, my) {
+    this._dismissPinTooltip();
+    const tip = document.createElement('div');
+    tip.className = 'pin-tooltip';
+    const text = document.createElement('div'); text.className = 'pin-tooltip-text';
+    text.textContent = ch.bubble;
+    tip.appendChild(text);
+    const copyBtn = document.createElement('button'); copyBtn.className = 'pin-tooltip-copy';
+    copyBtn.textContent = '\uD83D\uDCCB Copy';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(ch.bubble).then(() => { copyBtn.textContent = '\u2705 Copied!'; });
+    });
+    tip.appendChild(copyBtn);
+    document.body.appendChild(tip);
+    this._pinTooltip = tip;
+    this._clampPosition(tip, mx + 12, my - 10);
+  }
+
+  _dismissPinTooltip() {
+    if (this._pinTooltip) { this._pinTooltip.remove(); this._pinTooltip = null; }
+  }
+
+  /* ── Feature 4: Sidebar → Canvas sync ── */
+  _setupSidebarClick() {
+    const orgPanel = document.getElementById('org');
+    if (!orgPanel) return;
+    orgPanel.addEventListener('click', (e) => {
+      const ow = e.target.closest('.ow');
+      if (!ow) return;
+      const workerName = ow.dataset.worker || ow.textContent.trim();
+      /* Find character by name match */
+      let targetChar = null;
+      for (const ch of this.engine.chars.values()) {
+        if (ch.name === workerName || ch.id === workerName ||
+            ow.textContent.includes(ch.name)) {
+          targetChar = ch;
+          break;
+        }
+      }
+      if (!targetChar) return;
+
+      /* Highlight on canvas */
+      this.engine.highlightCharacter(targetChar.id);
+
+      /* Flash the sidebar item */
+      orgPanel.querySelectorAll('.ow').forEach(o => o.classList.remove('ow-highlight'));
+      ow.classList.add('ow-highlight');
+      setTimeout(() => ow.classList.remove('ow-highlight'), 1500);
+
+      /* Scroll log to latest entry mentioning this character */
+      const logEl = this.sim.logEl;
+      const entries = logEl.querySelectorAll('.le');
+      let lastMatch = null;
+      for (const entry of entries) {
+        if (entry.textContent.includes(targetChar.name) || entry.textContent.includes(targetChar.id)) {
+          lastMatch = entry;
+        }
+      }
+      if (lastMatch) {
+        lastMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        lastMatch.classList.add('le-flash');
+        setTimeout(() => {
+          lastMatch.classList.remove('le-flash');
+          lastMatch.style.background = '';
+        }, 1500);
+      }
+    });
+  }
+
+  /* ── Phase 4A: Wheel Zoom (with deltaMode normalization + RAF throttle) ── */
+  _setupZoom() {
+    const eng = this.engine;
+    let pendingWheel = null; /* RAF throttle: only process one wheel per frame */
+
+    eng.cv.addEventListener('wheel', (e) => {
+      if (this.sim._modalOpen) return;
+      e.preventDefault();
+
+      /* Normalize deltaY across deltaMode: 0=pixels, 1=lines, 2=pages */
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 20;       /* lines → approx pixels */
+      else if (e.deltaMode === 2) dy *= 400;  /* pages → approx pixels */
+
+      /* Cancel any in-flight zoom reset animation (user taking over) */
+      if (eng._zoomResetAnim) {
+        cancelAnimationFrame(eng._zoomResetAnim);
+        eng._zoomResetAnim = null;
+      }
+
+      /* Store latest event data (coalesce rapid events into one frame) */
+      pendingWheel = { clientX: e.clientX, clientY: e.clientY, dy };
+
+      if (!eng._zoomRAF) {
+        eng._zoomRAF = requestAnimationFrame(() => {
+          eng._zoomRAF = null;
+          if (!pendingWheel) return;
+          const pw = pendingWheel;
+          pendingWheel = null;
+
+          const rect = eng.cv.getBoundingClientRect();
+          const canvasX = (pw.clientX - rect.left) / rect.width * W;
+          const canvasY = (pw.clientY - rect.top) / rect.height * H;
+
+          /* World coords under cursor before zoom */
+          const worldX = (canvasX - eng._panX) / eng._zoom;
+          const worldY = (canvasY - eng._panY) / eng._zoom;
+
+          /* Zoom step */
+          const factor = pw.dy < 0 ? 1.1 : 1 / 1.1;
+          const newZoom = Math.min(3.0, Math.max(1.0, eng._zoom * factor));
+
+          /* Recompute pan so cursor stays over same world point */
+          eng._panX = canvasX - worldX * newZoom;
+          eng._panY = canvasY - worldY * newZoom;
+          eng._zoom = newZoom;
+          this._clampPan();
+          this._updateCursor();
+        });
+      }
+    }, { passive: false });
+
+    /* Keyboard zoom (+/-/0) and arrow key panning */
+    document.addEventListener('keydown', (e) => {
+      if (this.sim._modalOpen) return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const PAN_STEP = 40;
+      if (e.key === '=' || e.key === '+') {
+        eng._zoom = Math.min(3.0, eng._zoom * 1.15);
+        this._clampPan();
+        this._updateCursor();
+      } else if (e.key === '-') {
+        eng._zoom = Math.max(1.0, eng._zoom / 1.15);
+        this._clampPan();
+        this._updateCursor();
+      } else if (e.key === '0' && eng._zoom > 1.001) {
+        eng._zoom = 1; eng._panX = 0; eng._panY = 0;
+        this._updateCursor();
+      } else if (eng._zoom > 1.001) {
+        /* Arrow key panning (only when zoomed) */
+        if (e.key === 'ArrowLeft')  { eng._panX += PAN_STEP; this._clampPan(); e.preventDefault(); }
+        else if (e.key === 'ArrowRight') { eng._panX -= PAN_STEP; this._clampPan(); e.preventDefault(); }
+        else if (e.key === 'ArrowUp')    { eng._panY += PAN_STEP; this._clampPan(); e.preventDefault(); }
+        else if (e.key === 'ArrowDown')  { eng._panY -= PAN_STEP; this._clampPan(); e.preventDefault(); }
+      }
+    });
+  }
+
+  /* ── Phase 4A: Pan / Drag ── */
+  _setupPan() {
+    const eng = this.engine;
+    const cv = eng.cv;
+    let dragging = false;
+    let startX = 0, startY = 0;
+    let startPanX = 0, startPanY = 0;
+    let dragDist = 0;
+    let dragButton = -1;
+
+    cv.addEventListener('pointerdown', (e) => {
+      if (this.sim._modalOpen) return;
+      /* Middle button always pans; left button pans only when zoomed */
+      const canPan = e.button === 1 || (e.button === 0 && eng._zoom > 1.001);
+      if (!canPan) return;
+      dragging = true;
+      dragButton = e.button;
+      startX = e.clientX;
+      startY = e.clientY;
+      startPanX = eng._panX;
+      startPanY = eng._panY;
+      dragDist = 0;
+      cv.setPointerCapture(e.pointerId);
+      this._updateCursor(true);
+    });
+
+    cv.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const rect = cv.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const scaleY = H / rect.height;
+      const dx = (e.clientX - startX) * scaleX;
+      const dy = (e.clientY - startY) * scaleY;
+      dragDist = Math.sqrt(dx * dx + dy * dy);
+      eng._panX = startPanX + dx;
+      eng._panY = startPanY + dy;
+      this._clampPan();
+    });
+
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      this._updateCursor();
+      clearTimeout(this._pendingClickTimer);
+      /* Left-button drag threshold: if moved < 5px, treat as click */
+      if (dragButton === 0 && dragDist < 5 && this._pendingClick) {
+        this._doCharClick(this._pendingClick.event);
+      }
+      this._pendingClick = null;
+    };
+    cv.addEventListener('pointerup', endDrag);
+    cv.addEventListener('pointercancel', endDrag);
+
+    /* Double-click → reset zoom/pan with ease-out cubic animation */
+    cv.addEventListener('dblclick', (e) => {
+      if (this.sim._modalOpen) return;
+      if (eng._zoom <= 1.001) return;
+      const fromZoom = eng._zoom, fromPanX = eng._panX, fromPanY = eng._panY;
+      let frame = 0;
+      const totalFrames = 12;
+      const easeOut = (t) => 1 - Math.pow(1 - t, 3); /* cubic ease-out */
+      const animate = () => {
+        frame++;
+        const t = easeOut(frame / totalFrames);
+        eng._zoom = fromZoom + (1 - fromZoom) * t;
+        eng._panX = fromPanX * (1 - t);
+        eng._panY = fromPanY * (1 - t);
+        if (frame < totalFrames) {
+          eng._zoomResetAnim = requestAnimationFrame(animate);
+        } else {
+          eng._zoom = 1; eng._panX = 0; eng._panY = 0;
+          eng._zoomResetAnim = null;
+        }
+        this._updateCursor();
+      };
+      if (eng._zoomResetAnim) cancelAnimationFrame(eng._zoomResetAnim);
+      eng._zoomResetAnim = requestAnimationFrame(animate);
+    });
+  }
+
+  /* Clamp pan so the world doesn't go out of viewport bounds */
+  _clampPan() {
+    const eng = this.engine;
+    const maxPanX = 0, maxPanY = 0;
+    const minPanX = W - W * eng._zoom;
+    const minPanY = H - H * eng._zoom;
+    eng._panX = Math.min(maxPanX, Math.max(minPanX, eng._panX));
+    eng._panY = Math.min(maxPanY, Math.max(minPanY, eng._panY));
+  }
+
+  /* Update canvas cursor based on zoom state */
+  _updateCursor(dragging) {
+    const eng = this.engine;
+    if (eng._zoom > 1.001) {
+      eng.cv.style.cursor = dragging ? 'grabbing' : 'grab';
+    } else {
+      eng.cv.style.cursor = '';
+    }
+  }
+
+  /* ── Phase 4A: Minimap click + hover feedback ── */
+  _setupMinimapClick() {
+    const eng = this.engine;
+    const MM_W = 160, MM_H = 90, MM_PAD = 10;
+    const mmX = W - MM_W - MM_PAD, mmY = H - MM_H - MM_PAD;
+    const sx = MM_W / W, sy = MM_H / H;
+
+    const _isInMinimap = (e) => {
+      const rect = eng.cv.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) / rect.width * W;
+      const cy = (e.clientY - rect.top) / rect.height * H;
+      return cx >= mmX && cx <= mmX + MM_W && cy >= mmY && cy <= mmY + MM_H;
+    };
+
+    eng.cv.addEventListener('pointerdown', (e) => {
+      if (this.sim._modalOpen) return;
+      if (e.button !== 0) return;
+      if (!_isInMinimap(e)) return;
+
+      const rect = eng.cv.getBoundingClientRect();
+      const canvasX = (e.clientX - rect.left) / rect.width * W;
+      const canvasY = (e.clientY - rect.top) / rect.height * H;
+
+      /* Convert minimap click to world coordinates */
+      const worldX = (canvasX - mmX) / sx;
+      const worldY = (canvasY - mmY) / sy;
+
+      /* Center viewport on that world position */
+      eng._panX = W / 2 - worldX * eng._zoom;
+      eng._panY = H / 2 - worldY * eng._zoom;
+      this._clampPan();
+
+      /* Prevent click from propagating to char click / pan */
+      e.stopImmediatePropagation();
+    });
+
+    /* Hover tracking for minimap visual feedback */
+    eng.cv.addEventListener('pointermove', (e) => {
+      this._minimapHover = _isInMinimap(e);
+    });
+    eng.cv.addEventListener('pointerleave', () => { this._minimapHover = false; });
+  }
+
+  /* ── Dismiss all: Escape + outside click ── */
+  _setupDismiss() {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this._dismissCharPopup();
+        this._dismissPinTooltip();
+      }
+    });
+
+    document.addEventListener('pointerdown', (e) => {
+      /* Dismiss popup if click is outside it */
+      if (this._charPopup && !this._charPopup.contains(e.target) && e.target !== this.engine.cv) {
+        this._dismissCharPopup();
+      }
+      if (this._pinTooltip && !this._pinTooltip.contains(e.target) && e.target !== this.engine.cv) {
+        this._dismissPinTooltip();
+      }
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   §7  INIT
+   ═══════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('game');
+  const engine = new Engine(canvas);
+  const sim = new SimRenderer(engine);
+  sim._progressPanel = new ProgressPanel();
+  sim.connect();
+
+  /* Phase 3: Interaction Manager */
+  const interactions = new InteractionManager(engine, sim);
+  engine._interactionMgr = interactions;
+
+  /* Spawn fixed characters at start */
+  sim._spawnChar({ id: 'ceo', name: '김도현', color: '#4A90D9', role: 'ceo', gender: 'M', home_room: 'ceo_office', emoji: '\uD83D\uDC54' }, 'ceo_office');
+  sim._spawnChar({ id: 'deep_researcher', name: '최연서', color: '#9B59B6', role: 'specialist', gender: 'F', home_room: 'research_lab', emoji: '\uD83D\uDD2C' }, 'research_lab');
+
+  /* Phase 5: NPC Ambient System — Living Office */
+  const npcManager = new NPCManager(engine);
+  engine._npcManager = npcManager;
+  sim._npcManager = npcManager;
+  npcManager.initAll();
+
+  /* Idle ambient: CEO reads while waiting for task */
+  const ceoChar = engine.chars.get('ceo');
+  if (ceoChar) { ceoChar.state = 'sitting'; ceoChar.setBubble('대기 중...', 5000); }
+  engine._hudLabel = 'Waiting for task...';
+
+  /* Global keyboard shortcuts */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      /* Close done overlay if open → triggers celebration */
+      const doneOv = document.getElementById('done-ov');
+      if (!doneOv.classList.contains('h')) {
+        doneOv.classList.add('h');
+        sim._startCelebrationChoreography();
+        sim._showNewTaskButton();
+        return;
+      }
+    }
+  });
+
+  const goBtn = document.getElementById('go-btn');
+  const taskIn = document.getElementById('task-in');
+  const taskOv = document.getElementById('task-ov');
+
+  goBtn.addEventListener('click', () => {
+    const task = taskIn.value.trim();
+    if (!task) {
+      taskIn.style.borderColor = 'var(--red)';
+      taskIn.setAttribute('placeholder', '작업 내용을 입력해주세요!');
+      taskIn.focus();
+      setTimeout(() => { taskIn.style.borderColor = ''; }, 2000);
+      return;
+    }
+    /* Disable input while connecting */
+    goBtn.disabled = true;
+    goBtn.textContent = '연결 중...';
+    goBtn.style.opacity = '0.6';
+    taskIn.disabled = true;
+    sim.send({ type: 'start', task });
+    taskOv.classList.add('h');
+    sim._progressPanel?.reset();
+    sim.startTimer();
+    sim.addLog('Task started: ' + task, 'system');
+    /* NPC: User walks to CEO, Tier 1 goes home for work mode */
+    if (sim._npcManager) {
+      sim._npcManager.activateUser('task_start');
+      sim._npcManager.activateTier1('ceo');
+      sim._npcManager.activateTier1('deep_researcher');
+    }
+    /* Reset in case user returns via New Task */
+    goBtn.disabled = false;
+    goBtn.textContent = '시작';
+    goBtn.style.opacity = '';
+    taskIn.disabled = false;
+  });
+  taskIn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); goBtn.click(); }
+  });
+  /* Auto-focus task input for immediate typing */
+  taskIn.focus();
+
+  /* Log filter chips */
+  const filterPanel = document.getElementById('log-filters');
+  const filters = [
+    { label: 'All', value: 'all' },
+    { label: 'CEO', value: 'ceo' },
+    { label: 'Leader', value: 'leader' },
+    { label: 'Worker', value: 'worker' },
+    { label: 'System', value: 'system' },
+  ];
+  let activeFilter = 'all';
+  for (const f of filters) {
+    const chip = document.createElement('button');
+    chip.className = 'log-chip' + (f.value === 'all' ? ' active' : '');
+    chip.textContent = f.label;
+    chip.dataset.filter = f.value;
+    chip.addEventListener('click', () => {
+      activeFilter = f.value;
+      filterPanel.querySelectorAll('.log-chip').forEach(c => c.classList.toggle('active', c.dataset.filter === f.value));
+      document.querySelectorAll('#log .le').forEach(el => {
+        el.classList.toggle('hide-filter', f.value !== 'all' && !el.classList.contains(f.value));
+      });
+    });
+    filterPanel.appendChild(chip);
+  }
+  /* Monkey-patch addLog to respect active filter */
+  const origAddLog = sim.addLog.bind(sim);
+  sim.addLog = (text, style) => {
+    origAddLog(text, style);
+    if (activeFilter !== 'all') {
+      const last = sim.logEl.lastElementChild;
+      if (last && !last.classList.contains(activeFilter)) last.classList.add('hide-filter');
+    }
+  };
+});
+</script>
+</body>
+</html>
