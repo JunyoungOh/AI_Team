@@ -12,6 +12,7 @@ var ScheduleTeamManager = (function () {
   var _strategies = [];
   var _pendingTask = '';
   var _pendingCron = '';
+  var _selectedStrategy = null;
 
   function mountInShell(container) {
     _container = container;
@@ -91,6 +92,10 @@ var ScheduleTeamManager = (function () {
     header.appendChild(subtitle);
     wrapper.appendChild(header);
 
+    // 전략 선택 영역
+    var picker = _buildStrategyPicker();
+    wrapper.appendChild(picker);
+
     // 새 스케줄 생성 폼
     var form = document.createElement('div');
     form.className = 'st-form';
@@ -98,7 +103,9 @@ var ScheduleTeamManager = (function () {
     var taskInput = document.createElement('input');
     taskInput.className = 'st-input';
     taskInput.id = 'st-task';
-    taskInput.placeholder = '작업 내용 (예: 경쟁사 동향 모니터링)';
+    taskInput.placeholder = _selectedStrategy
+      ? '이 방식으로 실행할 작업 (예: 이번주 경쟁사 동향)'
+      : '작업 내용 (예: 경쟁사 동향 모니터링)';
 
     // 시간 선택 UI (시/분/요일)
     var timeRow = document.createElement('div');
@@ -487,6 +494,10 @@ var ScheduleTeamManager = (function () {
       output_format: fmt ? fmt.value : 'html',
       output_mode: mode ? mode.value : 'replace',
     };
+    if (_selectedStrategy) {
+      data.strategy = _selectedStrategy;
+      data.strategy_id = _selectedStrategy.id;
+    }
     if (detail) {
       data.detail_description = detail;
     } else if (legacyAnswers && legacyAnswers.length > 0) {
@@ -497,6 +508,7 @@ var ScheduleTeamManager = (function () {
     if (taskInput) taskInput.value = '';
     _pendingTask = '';
     _pendingCron = '';
+    _selectedStrategy = null;
   }
 
   var _progressTimer = null;
@@ -562,6 +574,68 @@ var ScheduleTeamManager = (function () {
         if (overlay.parentNode) overlay.remove();
       }, 3000);
     }
+  }
+
+  function _buildStrategyPicker() {
+    var wrap = document.createElement('div');
+    wrap.className = 'sp-wrapper';
+
+    var title = document.createElement('div');
+    title.className = 'sp-title';
+    title.textContent = '📅 분석 방식 선택';
+    wrap.appendChild(title);
+
+    // schedule 타입 전략만 필터 (general은 나만의 방식 탭 전용)
+    var schedStrategies = _strategies.filter(function (s) {
+      return (s.type || 'general') === 'schedule';
+    });
+
+    if (schedStrategies.length > 0) {
+      var grid = document.createElement('div');
+      grid.className = 'sp-grid';
+      for (var i = 0; i < schedStrategies.length; i++) {
+        (function (s) {
+          var card = document.createElement('div');
+          card.className = 'sp-card' + (_selectedStrategy && _selectedStrategy.id === s.id ? ' sp-card-active' : '');
+
+          var name = document.createElement('div');
+          name.className = 'sp-card-name';
+          name.textContent = '📅 ' + (s.name || '방식');
+          card.appendChild(name);
+
+          var desc = document.createElement('div');
+          desc.className = 'sp-card-desc';
+          desc.textContent = s.description || '';
+          card.appendChild(desc);
+
+          var meta = document.createElement('div');
+          meta.className = 'sp-card-meta';
+          var depthTag = document.createElement('span');
+          depthTag.className = 'sp-card-tag';
+          depthTag.textContent = s.depth || 'standard';
+          meta.appendChild(depthTag);
+          var typeTag = document.createElement('span');
+          typeTag.className = 'sp-card-tag';
+          typeTag.textContent = '스케줄';
+          meta.appendChild(typeTag);
+          card.appendChild(meta);
+
+          card.addEventListener('click', function () {
+            _selectedStrategy = (_selectedStrategy && _selectedStrategy.id === s.id) ? null : s;
+            _render();
+          });
+          grid.appendChild(card);
+        })(schedStrategies[i]);
+      }
+      wrap.appendChild(grid);
+    } else {
+      var empty = document.createElement('div');
+      empty.className = 'sp-empty';
+      empty.textContent = '저장된 스케줄 방식이 없습니다. "나만의 방식" 탭에서 📅 스케줄 타입을 만들어주세요.';
+      wrap.appendChild(empty);
+    }
+
+    return wrap;
   }
 
   return {

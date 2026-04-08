@@ -699,15 +699,28 @@ class ClaudeCodeBridge:
         max_turns: int = 30,
         timeout: int = 900,
         effort: str | None = None,
+        session_id: str | None = None,
+        resume: str | None = None,
     ) -> str:
         """Run Claude Code and return the full text from all assistant turns.
 
         Uses ``--output-format stream-json`` to capture every assistant
         message, not just the last one.  This prevents front-truncation
         when Claude splits a long HTML report across multiple turns.
+
+        Args:
+            session_id: Optional UUID to start a new persistent session.
+                Subsequent calls can use ``resume`` with the same UUID.
+                Cannot be combined with ``resume``.
+            resume: Optional session ID to resume an existing conversation.
+                The CLI will load the prior conversation state from disk,
+                so the user_message should contain ONLY the new turn.
         """
         if not user_message or not user_message.strip():
             user_message = "(context provided in system prompt)"
+
+        if session_id and resume:
+            raise ValueError("Cannot specify both session_id and resume")
 
         cmd = [
             "claude", "-p", user_message,
@@ -717,6 +730,10 @@ class ClaudeCodeBridge:
             "--max-turns", str(max_turns),
             "--append-system-prompt", system_prompt,
         ]
+        if session_id:
+            cmd.extend(["--session-id", session_id])
+        elif resume:
+            cmd.extend(["--resume", resume])
         if effort:
             cmd.extend(["--effort", effort])
         if allowed_tools:
@@ -1275,14 +1292,35 @@ class ClaudeCodeBridge:
             err_msg = stderr.decode(errors="replace").strip() if stderr else ""
             stdout_str = stdout.decode(errors="replace").strip() if stdout else ""
 
-            # CLI often returns errors in stdout JSON (is_error: true), not stderr
-            if not err_msg and stdout_str:
-                try:
-                    out_json = json.loads(_sanitize_json_output(stdout_str))
-                    if out_json.get("is_error"):
-                        err_msg = out_json.get("result", "unknown error")
-                except (json.JSONDecodeError, ValueError):
-                    err_msg = stdout_str[:300]
+            # CLI stream-json returns NDJSON - parse each line to find is_error result
+            if stdout_str:
+                result_err = None
+                for line in stdout_str.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                        if obj.get("type") == "result" and obj.get("is_error"):
+                            result_err = (
+                                f"subtype={obj.get('subtype','?')} "
+                                f"reason={obj.get('terminal_reason','?')} "
+                                f"turns={obj.get('num_turns','?')} "
+                                f"result={str(obj.get('result',''))[:200]}"
+                            )
+                            break
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                if result_err:
+                    err_msg = result_err
+                elif not err_msg:
+                    # No result line and no stderr - try single-JSON fallback
+                    try:
+                        out_json = json.loads(_sanitize_json_output(stdout_str))
+                        if out_json.get("is_error"):
+                            err_msg = out_json.get("result", "unknown error")
+                    except (json.JSONDecodeError, ValueError):
+                        err_msg = stdout_str[:300]
             if not err_msg:
                 err_msg = "unknown error"
 

@@ -15,7 +15,7 @@ var CardView = (function () {
   /* ── Welcome messages per mode ── */
   var WELCOME = {
     instant: '업무를 지시해주세요. CEO가 팀을 구성하고 실행합니다.',
-    'builder-create': '새로운 분석 방식을 설계합니다. 어떤 분석이 필요한지 알려주세요.',
+    'builder-create': '',  // 타입 선택 UI가 대신 표시됨
     'builder-saved': '',
   };
 
@@ -152,6 +152,12 @@ var CardView = (function () {
         ]);
       }
 
+      // builder-create 탭: 타입 선택 UI 표시
+      if (chatMode === 'builder-create') {
+        CardBuilder.resetTypeSelection();
+        CardBuilder.showTypeSelector();
+      }
+
       // builder-saved 탭: 저장된 방식 목록 즉시 표시
       if (chatMode === 'builder-saved') {
         _renderSavedStrategyList();
@@ -232,9 +238,13 @@ var CardView = (function () {
 
   function _renderSavedStrategyList() {
     if (!_chatPanel) return;
-    var strategies = CardBuilder.getStrategies ? CardBuilder.getStrategies() : [];
+    var allStrategies = CardBuilder.getStrategies ? CardBuilder.getStrategies() : [];
+    // 나만의 방식 탭에서는 general 타입만 표시
+    var strategies = allStrategies.filter(function (s) {
+      return !s.type || s.type === 'general';
+    });
     if (strategies.length === 0) {
-      _chatPanel.addMessage('저장된 방식이 없습니다. "새 방식 만들기" 탭에서 방식을 설계하고 저장하세요.', 'system');
+      _chatPanel.addMessage('저장된 General 방식이 없습니다. "새 방식 만들기" 탭에서 방식을 설계하고 저장하세요.', 'system');
       return;
     }
 
@@ -950,6 +960,7 @@ var CardView = (function () {
     getEditor: getEditor,
     getChatPanel: getChatPanel,
     getActiveMode: function () { return _activeMode; },
+    switchBuilderSubTab: _switchBuilderSubTab,
     stop: stop,
     isRunning: isRunning,
   };

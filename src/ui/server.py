@@ -510,6 +510,10 @@ async def company_builder_endpoint(ws: WebSocket):
                     await ws.send_json({"type": "schedule_list", "data": {"schedules": schedules}})
 
             # ── Strategy operations (분석 전략 프리셋) ──
+            elif msg_type == "set_strategy_type":
+                stype = msg.get("data", {}).get("strategy_type", "general")
+                strategy_session.set_strategy_type(stype)
+
             elif msg_type == "strategy_message":
                 content = msg.get("data", {}).get("content", "")
                 if content:

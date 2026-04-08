@@ -331,8 +331,10 @@ def _extract_team_json(text: str) -> dict[str, Any] | None:
 
 # ── Strategy Builder (분석 전략 프리셋 설계) ──
 
+# 타입별 전략 유형: general | schedule | overtime
+VALID_STRATEGY_TYPES = {"general", "schedule", "overtime"}
 
-STRATEGY_BUILDER_PROMPT = """\
+_STRATEGY_BASE_PROMPT = """\
 당신은 **분석 방식 설계 전문가**입니다.
 사용자의 비즈니스 목표를 분석하여, AI가 작업할 때 사용할 **분석 프레임워크(일하는 방식)**를 설계합니다.
 
@@ -354,20 +356,21 @@ STRATEGY_BUILDER_PROMPT = """\
 방식을 제안할 때 반드시 아래 JSON 블록을 응답에 포함하세요:
 
 ```strategy_json
-{
+{{
   "name": "전략 이름",
   "description": "이 전략이 무엇을 분석하는지 1-2문장",
+  "type": "{strategy_type}",
   "perspectives": [
-    {
+    {{
       "name": "관점 이름 (간결하게)",
       "icon": "이모지 1개",
       "instruction": "AI에게 전달할 구체적 분석 지시 (무엇을 조사하고, 어떤 데이터를 수집하고, 어떤 형태로 정리할지)"
-    }
+    }}
   ],
   "depth": "light | standard | deep",
   "output_format": "summary | executive_report | data_table | presentation",
   "special_instructions": "추가 지시사항 (선택)"
-}
+}}
 ```
 
 ### depth 설명
@@ -387,11 +390,7 @@ STRATEGY_BUILDER_PROMPT = """\
 사용자의 첫 입력을 받으면, **전략을 바로 설계하지 말고** 먼저 2~3개의 명확화 질문을 하세요.
 질문의 목적: 어떤 분석 방식을 원하는지 정확히 파악하기 위함.
 
-질문 예시:
-- "이 분석의 주요 목적은 무엇인가요? (투자 판단, 내부 보고, 경쟁 분석 등)"
-- "특별히 중점을 두고 싶은 관점이 있나요?"
-- "분석 깊이는 어느 정도를 원하시나요? (빠른 개요 vs 심층 분석)"
-- "결과물 형식 선호가 있나요? (요약 보고서, 데이터 표, 발표 자료)"
+{clarify_section}
 
 **중요**: 1단계에서는 strategy_json을 출력하지 마세요. 질문만 하세요.
 
@@ -400,40 +399,160 @@ STRATEGY_BUILDER_PROMPT = """\
 - 각 관점이 **왜 필요한지** 간단히 설명
 - strategy_json 블록 포함
 
+{design_section}
+
 ### 3단계: 수정
 사용자 요청에 따라 관점 추가/삭제/수정 후 전체 strategy_json을 다시 출력합니다.
 
 "방식이 저장되었습니다. 작업을 지시하시면 이 방식으로 분석을 시작합니다."로 안내합니다.
 """
 
+_CLARIFY_GENERAL = """\
+질문 예시:
+- "이 분석의 주요 목적은 무엇인가요? (투자 판단, 내부 보고, 경쟁 분석 등)"
+- "특별히 중점을 두고 싶은 관점이 있나요?"
+- "분석 깊이는 어느 정도를 원하시나요? (빠른 개요 vs 심층 분석)"
+- "결과물 형식 선호가 있나요? (요약 보고서, 데이터 표, 발표 자료)"\
+"""
+
+_CLARIFY_SCHEDULE = """\
+이 방식은 **정기적으로 반복 실행**되는 스케줄 작업용입니다.
+매일/매주 자동으로 돌아가며 변화를 감지하고 보고하는 분석 방식을 설계합니다.
+
+질문 예시:
+- "정기적으로 모니터링하고 싶은 대상은 무엇인가요? (경쟁사, 시장 동향, 뉴스, 가격 등)"
+- "변화 감지 시 특별히 알림받고 싶은 기준이 있나요? (예: 가격 10% 이상 변동)"
+- "이전 실행 결과와 비교하여 변화를 추적하는 것이 중요한가요?"
+- "결과물은 어떤 형식으로 받고 싶나요? (간략 요약 vs 상세 보고서)"\
+"""
+
+_CLARIFY_OVERTIME = """\
+이 방식은 **목표 달성까지 반복 심화**하는 야근팀 작업용입니다.
+한 번에 끝나지 않는 심층 리서치, 대규모 분석, 품질 목표 달성이 목적입니다.
+
+질문 예시:
+- "최종적으로 달성하고 싶은 분석 결과의 수준은? (데이터 포인트 수, 정보 깊이 등)"
+- "분석 범위를 점진적으로 확장할 건가요, 하나의 주제를 깊이 파고들 건가요?"
+- "반복 실행 시 이전 결과에서 부족한 부분을 자동으로 보강하면 좋겠나요?"
+- "중간 결과를 누적할 건가요, 매 반복마다 전체를 새로 작성할 건가요?"\
+"""
+
+_DESIGN_GENERAL = """\
+각 관점은 범용 분석 축으로 설계하세요.\
+"""
+
+_DESIGN_SCHEDULE = """\
+각 관점은 **정기 모니터링에 적합하게** 설계하세요:
+- 관점별 instruction에 "이전 결과 대비 변화"를 추적하는 지시를 포함
+- 반복 실행해도 의미 있는 데이터 수집이 되도록 시간적 범위를 명시 (예: "최근 1주일")
+- 변화 감지 기준이나 알림 조건을 instruction에 포함하면 좋습니다
+
+**중요 - 역할 경계**:
+당신의 역할은 **방식(관점) 설계**에 한정됩니다. 다음 사항은 **절대 묻거나 언급하지 마세요**:
+- 실행 시간(예: "몇 시에", "오전/오후", "매일 몇 시")
+- 실행 주기(예: "매일/매주/매월")
+- 요일 선택
+- 스케줄 등록/활성화
+
+실행 시간과 주기는 사용자가 **별도의 '스케줄팀' 탭**에서 이 방식을 선택한 뒤 직접 설정합니다.
+방식 카드(strategy_json)를 출력한 뒤에는 "이 방식을 저장한 다음, 스케줄팀 탭에서 실행 시간을 설정하시면 됩니다." 정도로만 안내하세요.\
+"""
+
+_DESIGN_OVERTIME = """\
+각 관점은 **심층 반복 탐색에 적합하게** 설계하세요:
+- 관점별 instruction에 "이전 iteration에서 수집한 데이터를 기반으로 추가 탐색" 지시를 포함
+- 한 번의 실행으로 완성되지 않아도 되며, 반복할수록 깊어지는 구조로 설계
+- 품질 기준(예: 데이터 포인트 N개 이상, 출처 M개 이상)을 instruction에 명시하면 좋습니다
+
+**중요 - 역할 경계**:
+당신의 역할은 **방식(관점) 설계**에 한정됩니다. 다음 사항은 **절대 묻거나 언급하지 마세요**:
+- 최대 반복 횟수 (예: "몇 번 반복할까요?")
+- 실행 시작/중단 시점
+- 야근팀 실행 버튼 / 실행 등록 절차
+
+반복 횟수와 실행은 사용자가 **별도의 '야근팀' 탭**에서 이 방식을 선택한 뒤 직접 설정합니다.
+방식 카드(strategy_json)를 출력한 뒤에는 "이 방식을 저장한 다음, 야근팀 탭에서 반복 횟수와 목표를 설정하시면 됩니다." 정도로만 안내하세요.\
+"""
+
+_CLARIFY_MAP = {
+    "general": _CLARIFY_GENERAL,
+    "schedule": _CLARIFY_SCHEDULE,
+    "overtime": _CLARIFY_OVERTIME,
+}
+
+_DESIGN_MAP = {
+    "general": _DESIGN_GENERAL,
+    "schedule": _DESIGN_SCHEDULE,
+    "overtime": _DESIGN_OVERTIME,
+}
+
+
+def build_strategy_prompt(strategy_type: str = "general") -> str:
+    """타입에 맞는 전략 설계 프롬프트를 조합하여 반환."""
+    if strategy_type not in VALID_STRATEGY_TYPES:
+        strategy_type = "general"
+    return _STRATEGY_BASE_PROMPT.format(
+        strategy_type=strategy_type,
+        clarify_section=_CLARIFY_MAP[strategy_type],
+        design_section=_DESIGN_MAP[strategy_type],
+    )
+
+
+# 하위 호환: 기존 코드에서 STRATEGY_BUILDER_PROMPT를 직접 참조하는 곳 대비
+STRATEGY_BUILDER_PROMPT = build_strategy_prompt("general")
+
 
 class StrategyBuilderSession:
-    """분석 전략 프리셋 설계 대화 세션."""
+    """분석 전략 프리셋 설계 대화 세션.
 
-    def __init__(self, user_id: str = ""):
+    Claude Code CLI의 --session-id/--resume를 활용하여 CLI 측에서
+    대화 문맥을 유지합니다. 파이썬 쪽에서는 사용자 메시지만 보관하고,
+    매 턴마다 전체 히스토리를 재전송하지 않습니다.
+    """
+
+    def __init__(self, user_id: str = "", strategy_type: str = "general"):
         self.user_id = user_id
+        self.strategy_type = (
+            strategy_type if strategy_type in VALID_STRATEGY_TYPES else "general"
+        )
         self.history: list[dict[str, str]] = []
         self._bridge = get_bridge()
+        # CLI 세션 ID (첫 호출 시 생성, 이후 턴에서 --resume으로 재사용)
+        self._cli_session_id: str | None = None
+
+    def set_strategy_type(self, strategy_type: str) -> None:
+        """전략 타입을 변경하고 대화 히스토리를 초기화."""
+        self.strategy_type = (
+            strategy_type if strategy_type in VALID_STRATEGY_TYPES else "general"
+        )
+        self.history.clear()
+        # 타입 변경 시 세션도 초기화 (새 시스템 프롬프트 적용 위해)
+        self._cli_session_id = None
 
     async def stream_response(self, user_message: str, ws) -> None:
-        """전략 설계 응답 생성 및 WebSocket 전송."""
-        self.history.append({"role": "user", "content": user_message})
+        """전략 설계 응답 생성 및 WebSocket 전송.
 
-        conv_parts: list[str] = []
-        for m in self.history[:-1]:
-            role_label = "User" if m["role"] == "user" else "Assistant"
-            conv_parts.append(f"[{role_label}]: {m['content']}")
-        conv_parts.append(f"[User]: {user_message}")
-        combined_message = "\n\n".join(conv_parts)
+        첫 호출에서는 새 session_id를 생성하고 시스템 프롬프트와 함께 전달.
+        이후 호출은 --resume으로 동일 세션에 이어 붙이며 사용자 메시지만 전송.
+        """
+        self.history.append({"role": "user", "content": user_message})
+        system_prompt = build_strategy_prompt(self.strategy_type)
+
+        # 첫 호출: 새 세션 시작 / 이후 호출: 기존 세션 resume
+        is_first_turn = self._cli_session_id is None
+        if is_first_turn:
+            self._cli_session_id = str(uuid.uuid4())
 
         try:
             full_text = await self._bridge.raw_query(
-                system_prompt=STRATEGY_BUILDER_PROMPT,
-                user_message=combined_message,
+                system_prompt=system_prompt,
+                user_message=user_message,
                 model="sonnet",
                 allowed_tools=[],
-                max_turns=1,
+                max_turns=3,
                 timeout=120,
+                session_id=self._cli_session_id if is_first_turn else None,
+                resume=self._cli_session_id if not is_first_turn else None,
             )
 
             try:
@@ -499,6 +618,10 @@ def _extract_strategy_json(text: str) -> dict[str, Any] | None:
 
     if not data.get("name"):
         data["name"] = "분석 전략"
+
+    # type 검증 — 없으면 general
+    if data.get("type") not in VALID_STRATEGY_TYPES:
+        data["type"] = "general"
 
     # perspectives 검증
     valid_depths = {"light", "standard", "deep"}

@@ -24,6 +24,8 @@ var CardBuilder = (function () {
   var _useStrategyMode = true; // 싱글 세션 모드에서는 항상 전략 설계
   var _pendingEditMode = false; // 수정 요청 대기 플래그
   var _initialStrategyBtnAdded = false; // 초기 저장된 방식 버튼 추가 여부
+  var _strategyType = 'general'; // 현재 선택된 전략 타입: general | schedule | overtime
+  var _typeSelected = false; // 타입 선택 완료 여부
 
   /* ── WebSocket ── */
 
@@ -453,9 +455,144 @@ var CardBuilder = (function () {
     });
   }
 
+  /* ── Strategy Type Selector ── */
+
+  var _TYPE_INFO = {
+    general: { icon: '🔍', label: 'General', desc: '범용 분석 방식' },
+    schedule: { icon: '📅', label: '스케줄', desc: '정기 반복 모니터링용' },
+    overtime: { icon: '🌙', label: '야근', desc: '심층 반복 탐색용' },
+  };
+
+  function showTypeSelector() {
+    if (!_chatPanel) return;
+    _typeSelected = false;
+
+    var container = document.createElement('div');
+    container.className = 'cb-type-selector';
+    container.id = 'cb-type-selector';
+
+    var title = document.createElement('div');
+    title.className = 'cb-type-title';
+    title.textContent = '어떤 용도의 방식을 만드시겠어요?';
+    container.appendChild(title);
+
+    var grid = document.createElement('div');
+    grid.className = 'cb-type-grid';
+
+    var types = ['general', 'schedule', 'overtime'];
+    for (var i = 0; i < types.length; i++) {
+      (function (t) {
+        var info = _TYPE_INFO[t];
+        var btn = document.createElement('button');
+        btn.className = 'cb-type-btn';
+        btn.dataset.type = t;
+
+        var icon = document.createElement('div');
+        icon.className = 'cb-type-icon';
+        icon.textContent = info.icon;
+        btn.appendChild(icon);
+
+        var label = document.createElement('div');
+        label.className = 'cb-type-label';
+        label.textContent = info.label;
+        btn.appendChild(label);
+
+        var desc = document.createElement('div');
+        desc.className = 'cb-type-desc';
+        desc.textContent = info.desc;
+        btn.appendChild(desc);
+
+        btn.addEventListener('click', function () {
+          _selectType(t);
+        });
+        grid.appendChild(btn);
+      })(types[i]);
+    }
+
+    container.appendChild(grid);
+    _chatPanel.messagesEl.appendChild(container);
+    _chatPanel.messagesEl.scrollTop = _chatPanel.messagesEl.scrollHeight;
+  }
+
+  function _selectType(type) {
+    _strategyType = type;
+    _typeSelected = true;
+
+    // 서버에 타입 설정 전송
+    _send({ type: 'set_strategy_type', data: { strategy_type: type } });
+
+    // 선택 UI 업데이트 — 선택된 버튼 강조, 나머지 비활성
+    var selector = document.getElementById('cb-type-selector');
+    if (selector) {
+      var btns = selector.querySelectorAll('.cb-type-btn');
+      for (var i = 0; i < btns.length; i++) {
+        if (btns[i].dataset.type === type) {
+          btns[i].classList.add('cb-type-selected');
+        } else {
+          btns[i].classList.add('cb-type-dimmed');
+          btns[i].disabled = true;
+        }
+      }
+    }
+
+    // 안내 메시지
+    var info = _TYPE_INFO[type];
+    if (_chatPanel) {
+      _chatPanel.addMessage(
+        info.icon + ' **' + info.label + '** 방식을 설계합니다. 어떤 분석이 필요한지 알려주세요.',
+        'system'
+      );
+      _chatPanel.setInputPlaceholder(
+        type === 'schedule' ? '정기 모니터링할 내용을 알려주세요...' :
+        type === 'overtime' ? '심층 분석할 내용을 알려주세요...' :
+        '분석 방식을 설계해보세요...'
+      );
+    }
+  }
+
+  /**
+   * 외부에서 특정 타입으로 빌더를 시작할 때 사용.
+   * 스케줄팀/야근팀에서 "새로 만들기" 시 호출.
+   */
+  function startWithType(type) {
+    // builder 모드로 전환 (create 서브탭 강제)
+    if (typeof CardView !== 'undefined') {
+      CardView.switchMode('builder');
+    }
+
+    // 메시지 영역 초기화 + 타입 선택 상태 리셋
+    _typeSelected = false;
+    _strategyType = 'general';
+    if (_chatPanel && _chatPanel.messagesEl) {
+      while (_chatPanel.messagesEl.firstChild) {
+        _chatPanel.messagesEl.removeChild(_chatPanel.messagesEl.firstChild);
+      }
+    }
+
+    // WS 연결 보장
+    if (_chatPanel) _connect(_chatPanel);
+
+    // 타입 바로 선택 (selector 없이 즉시 설정)
+    var retries = 0;
+    var trySet = function () {
+      if (_ws && _wsReady) {
+        _selectType(type);
+      } else if (retries < 30) {
+        retries++;
+        setTimeout(trySet, 200);
+      }
+    };
+    trySet();
+  }
+
   /* ── Public API ── */
 
   function sendMessage(text) {
+    // 타입 미선택 시 안내
+    if (_useStrategyMode && !_typeSelected && !_currentStrategy) {
+      if (_chatPanel) _chatPanel.addMessage('먼저 방식 유형을 선택해주세요.', 'system');
+      return;
+    }
     // 수정 요청 모드: 현재 전략 컨텍스트를 포함하여 수정 요청 전달
     if (_pendingEditMode && _currentStrategy) {
       _pendingEditMode = false;
@@ -627,9 +764,17 @@ var CardBuilder = (function () {
     getCurrentStrategyId: function () { return _currentStrategyId; },
     getCurrentStrategy: function () { return _currentStrategy; },
     getStrategies: function () { return _strategies; },
+    getStrategiesByType: function (type) {
+      return _strategies.filter(function (s) { return (s.type || 'general') === type; });
+    },
     loadAndDisplayStrategy: function (s) { _displayStrategyCards(s); },
     deleteStrategy: function (id) { _send({ type: 'delete_strategy', data: { strategy_id: id } }); },
     setPendingEditMode: function (v) { _pendingEditMode = !!v; },
     validateTask: validateTask,
+    showTypeSelector: showTypeSelector,
+    startWithType: startWithType,
+    getStrategyType: function () { return _strategyType; },
+    isTypeSelected: function () { return _typeSelected; },
+    resetTypeSelection: function () { _typeSelected = false; _strategyType = 'general'; },
   };
 })();

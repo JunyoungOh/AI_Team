@@ -9,14 +9,24 @@ var OvertimeManager = (function () {
   var _ws = null;
   var _container = null;
   var _running = false;
+  var _strategies = [];
+  var _selectedStrategy = null;
 
   function mountInShell(container) {
     _container = container;
     _render();
   }
 
+  function _loadStrategies() {
+    // CardBuilder에서 전략 목록을 참조
+    if (typeof CardBuilder !== 'undefined' && CardBuilder.getStrategies) {
+      _strategies = CardBuilder.getStrategies();
+    }
+  }
+
   function _render() {
     if (!_container) return;
+    _loadStrategies();
     while (_container.firstChild) _container.removeChild(_container.firstChild);
 
     // 설정 폼
@@ -32,6 +42,10 @@ var OvertimeManager = (function () {
     subtitle.className = 'ot-subtitle';
     subtitle.textContent = '목표를 달성할 때까지 AI가 반복적으로 리서치하고 분석합니다.';
     form.appendChild(subtitle);
+
+    // 전략 선택 영역
+    var picker = _buildOtStrategyPicker();
+    form.appendChild(picker);
 
     // 작업 입력
     var taskLabel = document.createElement('label');
@@ -120,6 +134,10 @@ var OvertimeManager = (function () {
     var goal = document.getElementById('ot-goal').value.trim();
     var maxIter = parseInt(document.getElementById('ot-max-iter').value, 10);
 
+    if (!_selectedStrategy) {
+      alert('야근팀은 방식 선택이 필수입니다.\n\n"나만의 방식" 탭에서 🌙 야근 타입으로 방식을 먼저 만든 뒤, 여기서 선택해주세요.');
+      return;
+    }
     if (!task) { alert('작업을 입력하세요.'); return; }
     if (!goal) { alert('달성 목표를 입력하세요.'); return; }
 
@@ -156,6 +174,10 @@ var OvertimeManager = (function () {
     var sendStart = function () {
       if (_ws && _ws.readyState === WebSocket.OPEN) {
         var payload = { task: task, goal: goal, max_iterations: maxIter };
+        if (_selectedStrategy) {
+          payload.strategy = _selectedStrategy;
+          payload.strategy_id = _selectedStrategy.id;
+        }
         if (detailDesc) {
           payload.detail_description = detailDesc;
         } else if (answers && answers.length > 0) {
@@ -458,6 +480,68 @@ var OvertimeManager = (function () {
     var form = _container.querySelector('.ot-form');
     if (form) form.after(qa);
     else _container.appendChild(qa);
+  }
+
+  function _buildOtStrategyPicker() {
+    var wrap = document.createElement('div');
+    wrap.className = 'sp-wrapper';
+
+    var title = document.createElement('div');
+    title.className = 'sp-title';
+    title.textContent = '🌙 분석 방식 선택 (필수)';
+    wrap.appendChild(title);
+
+    // overtime 타입 전략만 필터 (general은 나만의 방식 탭 전용)
+    var otStrategies = _strategies.filter(function (s) {
+      return (s.type || 'general') === 'overtime';
+    });
+
+    if (otStrategies.length > 0) {
+      var grid = document.createElement('div');
+      grid.className = 'sp-grid';
+      for (var i = 0; i < otStrategies.length; i++) {
+        (function (s) {
+          var card = document.createElement('div');
+          card.className = 'sp-card' + (_selectedStrategy && _selectedStrategy.id === s.id ? ' sp-card-active' : '');
+
+          var name = document.createElement('div');
+          name.className = 'sp-card-name';
+          name.textContent = '🌙 ' + (s.name || '방식');
+          card.appendChild(name);
+
+          var desc = document.createElement('div');
+          desc.className = 'sp-card-desc';
+          desc.textContent = s.description || '';
+          card.appendChild(desc);
+
+          var meta = document.createElement('div');
+          meta.className = 'sp-card-meta';
+          var depthTag = document.createElement('span');
+          depthTag.className = 'sp-card-tag';
+          depthTag.textContent = s.depth || 'standard';
+          meta.appendChild(depthTag);
+          var typeTag = document.createElement('span');
+          typeTag.className = 'sp-card-tag';
+          typeTag.textContent = '야근';
+          meta.appendChild(typeTag);
+          card.appendChild(meta);
+
+          card.addEventListener('click', function () {
+            _selectedStrategy = (_selectedStrategy && _selectedStrategy.id === s.id) ? null : s;
+            _render();
+          });
+          grid.appendChild(card);
+        })(otStrategies[i]);
+      }
+      wrap.appendChild(grid);
+    } else {
+      var empty = document.createElement('div');
+      empty.className = 'sp-empty';
+      empty.textContent = '저장된 야근 방식이 없습니다. "나만의 방식" 탭에서 🌙 야근 타입을 먼저 만들어주세요.';
+      wrap.appendChild(empty);
+    }
+
+    return wrap;
   }
 
   return {
