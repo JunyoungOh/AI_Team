@@ -33,6 +33,10 @@ class DiscussionSession:
         self._session_id: str = ""
         self._user_id: str = user_id
         self._human_input_future: asyncio.Future | None = None
+        # Per-participant Claude CLI session UUIDs (populated from setup node)
+        # so we can clean up the on-disk session JSONL files when the
+        # discussion ends.
+        self._participant_session_ids: list[str] = []
 
     async def run(self):
         """Main loop: wait for config, run discussion graph."""
@@ -213,8 +217,8 @@ class DiscussionSession:
             "final_report_html": "",
             "report_file_path": "",
             "session_id": self._session_id,
-            "needs_search": False,
             "human_input_pending": False,
+            "participant_sessions": {},
         }
 
         cancelled_mid_stream = False
@@ -223,13 +227,22 @@ class DiscussionSession:
             _log.info("discussion_graph_compiled: session=%s", self._session_id)
 
             async for event in app.astream(initial, config=graph_config):
-                if self._cancelled:
-                    cancelled_mid_stream = True
-                    break
+                # Process the event BEFORE checking cancellation. This is
+                # critical for the final report node — it can take 60-120s,
+                # and a transient heartbeat failure during that window flips
+                # _cancelled to True (see _send() error handler). If we
+                # broke first we'd silently drop the report event, leaving
+                # the file on disk but unregistered in the DB and the UI
+                # stuck on "토론 내용을 정리하고 있습니다…". _send is already
+                # exception-safe, so processing one extra event after a
+                # transient cancel costs nothing and saves the report.
                 for node_name, update in event.items():
                     if not isinstance(update, dict):
                         continue
                     await self._emit_discussion_event(node_name, update)
+                if self._cancelled:
+                    cancelled_mid_stream = True
+                    break
         except asyncio.CancelledError:
             cancelled_mid_stream = True
             self._kill_session_subprocesses()
@@ -258,6 +271,37 @@ class DiscussionSession:
                     )
                 except Exception:
                     pass
+            # Delete per-participant Claude CLI session JSONL files so they
+            # don't accumulate. Each discussion uses fresh UUIDs (option A1)
+            # so these files have no value once the discussion is done.
+            self._cleanup_participant_session_files()
+
+    def _cleanup_participant_session_files(self) -> None:
+        """Delete the on-disk Claude CLI session JSONL files this discussion
+        created. Bridge runs CLI from /private/tmp (skip_mcp), so sessions
+        live under ~/.claude/projects/-private-tmp/<uuid>.jsonl.
+
+        Best-effort: failures are logged at debug level and ignored. Missing
+        files are normal (e.g. if a participant never reached opening_speak).
+        """
+        if not self._participant_session_ids:
+            return
+        import logging
+        _log = logging.getLogger(__name__)
+        sessions_dir = Path.home() / ".claude" / "projects" / "-private-tmp"
+        removed = 0
+        for sid in self._participant_session_ids:
+            f = sessions_dir / f"{sid}.jsonl"
+            try:
+                f.unlink(missing_ok=True)
+                removed += 1
+            except Exception as e:
+                _log.debug("disc_session_cleanup_skip: %s (%s)", sid, e)
+        _log.info(
+            "disc_session_cleanup: session=%s removed=%d/%d",
+            self._session_id, removed, len(self._participant_session_ids),
+        )
+        self._participant_session_ids = []
 
     def _kill_session_subprocesses(self) -> None:
         """Kill only this session's subprocesses (safe for concurrent mode).
@@ -274,6 +318,12 @@ class DiscussionSession:
 
     async def _emit_discussion_event(self, node_name: str, update: dict):
         """Translate graph node updates to WebSocket events."""
+        # Capture per-participant session IDs as soon as setup emits them
+        # so the finally block in _run_discussion can clean them up later.
+        sessions_map = update.get("participant_sessions")
+        if sessions_map:
+            self._participant_session_ids = list(sessions_map.values())
+
         # Phase changes
         if "phase" in update:
             await self._send({
@@ -329,14 +379,17 @@ class DiscussionSession:
                     "download_url": download_url,
                 },
             })
-            # Save to user's report history (24h retention)
-            if self._user_id and download_url and hasattr(self, '_config'):
+            # Save to report history (7-day retention).
+            # When membership is disabled, _user_id is "" — save_discussion_report
+            # remaps that to "anonymous" so the row still appears in the
+            # history viewer.
+            if download_url and hasattr(self, '_config'):
                 try:
                     from src.auth.models import UserDB
                     config = self._config
                     UserDB.get().save_discussion_report(
                         session_id=self._session_id,
-                        user_id=self._user_id,
+                        user_id=self._user_id,  # may be "" — handled in models.py
                         topic=config.topic,
                         participants=[p.name for p in config.participants],
                         style=config.style,

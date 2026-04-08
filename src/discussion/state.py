@@ -34,5 +34,5 @@ class DiscussionState(TypedDict):
     final_report_html: str       # Generated HTML report
     report_file_path: str        # Saved report file path (empty if not saved)
     session_id: str
-    needs_search: bool               # moderator가 설정
     human_input_pending: bool        # human_turn 대기 상태
+    participant_sessions: dict[str, str]  # participant_id → Claude CLI session UUID (per-discussion, new each run)

@@ -24,6 +24,30 @@ from pathlib import Path
 from src.config.settings import get_settings
 
 
+def _delete_report_folder(session_id: str) -> bool:
+    """Remove ``data/reports/disc_<session_id>/`` from disk.
+
+    The DB stores ``file_path`` as a URL-style string (``/reports/...``)
+    that does not include the ``data/`` prefix where files actually live,
+    so we reconstruct the on-disk path from the configured
+    ``report_output_dir`` setting and the session_id. Best-effort: any
+    failure is swallowed because deletion is non-critical (cleanup will
+    retry on the next pass).
+    """
+    import shutil
+    if not session_id:
+        return False
+    try:
+        base = Path(get_settings().report_output_dir)
+        folder = base / f"disc_{session_id}"
+        if folder.exists() and folder.is_dir() and folder.name.startswith("disc_"):
+            shutil.rmtree(folder)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 @dataclass
 class User:
     id: str
@@ -308,6 +332,10 @@ class UserDB:
 
     # ── Discussion Reports ────────────────────────
 
+    # 1-week retention: long enough for users to find recent reports,
+    # short enough to prevent unbounded disk growth.
+    REPORT_RETENTION_DAYS = 7
+
     def save_discussion_report(
         self, session_id: str, user_id: str, topic: str,
         participants: list[str], style: str, file_path: str,
@@ -320,9 +348,10 @@ class UserDB:
                 "INSERT OR REPLACE INTO discussion_reports "
                 "(id, user_id, topic, participants, style, created_at, expires_at, file_path) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (session_id, user_id, topic,
+                (session_id, user_id or "anonymous", topic,
                  json.dumps(participants, ensure_ascii=False), style,
-                 now.isoformat(), (now + timedelta(hours=24)).isoformat(),
+                 now.isoformat(),
+                 (now + timedelta(days=self.REPORT_RETENTION_DAYS)).isoformat(),
                  file_path),
             )
 
@@ -348,20 +377,35 @@ class UserDB:
         ]
 
     def delete_discussion_report(self, report_id: str, user_id: str) -> bool:
+        """Delete a discussion report's DB row AND its on-disk folder.
+
+        Why both: the history viewer's GET endpoint reconciles orphans by
+        scanning data/reports/disc_*/ and re-inserting any folder it finds.
+        If we delete only the DB row, that reconciliation immediately
+        restores the row from the still-present folder, making the user's
+        delete look like a no-op. Removing the folder closes the loop.
+        """
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM discussion_reports WHERE id = ? AND user_id = ?",
                 (report_id, user_id),
             )
+        if cur.rowcount > 0:
+            _delete_report_folder(report_id)
         return cur.rowcount > 0
 
     def cleanup_expired_reports(self) -> int:
-        """Delete expired reports (DB rows + files). Returns count deleted."""
-        import shutil
+        """Delete expired reports (DB rows + on-disk folders).
+
+        Reuses :func:`_delete_report_folder` so the path-resolution rules
+        stay in one place — the URL-style ``file_path`` stored in the DB
+        is NOT a usable filesystem path, so we always reconstruct from
+        ``settings.report_output_dir + session_id``.
+        """
         now = datetime.now().isoformat()
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT id, file_path FROM discussion_reports WHERE expires_at <= ?",
+                "SELECT id FROM discussion_reports WHERE expires_at <= ?",
                 (now,),
             ).fetchall()
             if rows:
@@ -370,13 +414,7 @@ class UserDB:
                     (now,),
                 )
         for r in rows:
-            try:
-                fp = Path(r["file_path"].lstrip("/"))
-                report_dir = fp.parent
-                if report_dir.exists():
-                    shutil.rmtree(report_dir)
-            except Exception:
-                pass
+            _delete_report_folder(r["id"])
         return len(rows)
 
     @staticmethod

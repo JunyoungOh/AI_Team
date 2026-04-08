@@ -102,6 +102,27 @@ def _save_report(html_fragment: str, config, session_id: str) -> str | None:
 
         report_path = output_dir / "report.html"
         report_path.write_text(full_html, encoding="utf-8")
+
+        # Sidecar metadata.json — used by the history-viewer API to backfill
+        # the discussion_reports DB row if the report node finished but the
+        # WebSocket session was already torn down (e.g., browser closed
+        # mid-closing). Without this, an orphan report would sit on disk
+        # invisible to the history viewer.
+        try:
+            import json as _json
+            meta = {
+                "session_id": session_id,
+                "topic": config.topic,
+                "participants": [p.name for p in config.participants],
+                "style": config.style,
+                "created_at": datetime.now().isoformat(),
+            }
+            (output_dir / "metadata.json").write_text(
+                _json.dumps(meta, ensure_ascii=False), encoding="utf-8",
+            )
+        except Exception:
+            logger.warning("discussion_metadata_save_failed", exc_info=True)
+
         logger.info("discussion_report_saved", path=str(report_path))
         return str(report_path)
     except Exception:

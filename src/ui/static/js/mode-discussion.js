@@ -228,6 +228,7 @@ class DiscussionManager {
     rightActions.style.cssText = 'display:flex;gap:8px;';
     var recommendBtn = document.createElement('button');
     recommendBtn.className = 'disc-mode-btn';
+    recommendBtn.id = 'disc-recommend-btn';
     recommendBtn.textContent = '\uCC38\uAC00\uC790 \uCD94\uCC9C';
     recommendBtn.addEventListener('click', function() { self._recommendParticipants(); });
     rightActions.appendChild(recommendBtn);
@@ -250,11 +251,152 @@ class DiscussionManager {
     footer.appendChild(startBtn);
     setup.appendChild(footer);
 
+    /* ── Recent reports (1-week retention) — full width below footer ── */
+    var historySection = document.createElement('div');
+    historySection.className = 'disc-history-section';
+    historySection.id = 'disc-history-section';
+    var hHeader = document.createElement('div');
+    hHeader.className = 'disc-history-header';
+    var hTitle = document.createElement('div');
+    hTitle.className = 'disc-history-title';
+    hTitle.textContent = '\uCD5C\uADFC \uD1A0\uB860 (\uCD5C\uADFC 1\uC8FC\uC77C)';
+    hHeader.appendChild(hTitle);
+    var hRefresh = document.createElement('button');
+    hRefresh.className = 'disc-history-refresh';
+    hRefresh.title = '\uC0C8\uB85C\uACE0\uCE68';
+    hRefresh.textContent = '\u21BB';
+    hRefresh.addEventListener('click', function() { self._loadHistory(); });
+    hHeader.appendChild(hRefresh);
+    historySection.appendChild(hHeader);
+    var hList = document.createElement('div');
+    hList.className = 'disc-history-list';
+    hList.id = 'disc-history-list';
+    historySection.appendChild(hList);
+    setup.appendChild(historySection);
+
     c.appendChild(setup);
 
-    /* Render initial participants + presets */
+    /* Render initial participants + presets + history */
     this._renderDefaultParticipants();
     this._renderPresetsInSetup();
+    this._loadHistory();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     §  HISTORY VIEWER — fetches /api/reports/discussion
+     ═══════════════════════════════════════════════════ */
+
+  async _loadHistory() {
+    var listEl = document.getElementById('disc-history-list');
+    if (!listEl) return;
+    listEl.textContent = '\uBD88\uB7EC\uC624\uB294 \uC911...';
+    try {
+      var resp = await fetch('/api/reports/discussion', { credentials: 'same-origin' });
+      if (!resp.ok) {
+        listEl.textContent = resp.status === 401
+          ? '\uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.'
+          : '\uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328 (HTTP ' + resp.status + ')';
+        return;
+      }
+      var data = await resp.json();
+      this._renderHistoryList(data.reports || []);
+    } catch (e) {
+      listEl.textContent = '\uB124\uD2B8\uC6CC\uD06C \uC624\uB958: ' + (e && e.message || e);
+    }
+  }
+
+  _renderHistoryList(reports) {
+    var listEl = document.getElementById('disc-history-list');
+    if (!listEl) return;
+    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+
+    if (!reports.length) {
+      var empty = document.createElement('div');
+      empty.className = 'disc-history-empty';
+      empty.textContent = '\uC544\uC9C1 \uC800\uC7A5\uB41C \uD1A0\uB860 \uB9AC\uD3EC\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uC0C8 \uD1A0\uB860\uC744 \uC2DC\uC791\uD574 \uBCF4\uC138\uC694.';
+      listEl.appendChild(empty);
+      return;
+    }
+
+    var self = this;
+    reports.forEach(function(r) {
+      var row = document.createElement('div');
+      row.className = 'disc-history-row';
+
+      var info = document.createElement('div');
+      info.className = 'disc-history-info';
+      var topic = document.createElement('div');
+      topic.className = 'disc-history-topic';
+      topic.textContent = r.topic;
+      info.appendChild(topic);
+      var meta = document.createElement('div');
+      meta.className = 'disc-history-meta';
+      var participantsStr = (r.participants || []).join(' \u00B7 ');
+      var when = self._formatRelativeTime(r.created_at);
+      var styleLabels = { free: '\uC790\uC720', debate: '\uCC2C\uBC18', brainstorm: '\uBE0C\uB808\uC778\uC2A4\uD1A0\uBC0D' };
+      var styleStr = styleLabels[r.style] || r.style;
+      meta.textContent = when + ' \u2022 ' + styleStr + ' \u2022 ' + participantsStr;
+      info.appendChild(meta);
+      row.appendChild(info);
+
+      var actions = document.createElement('div');
+      actions.className = 'disc-history-actions';
+
+      var openBtn = document.createElement('button');
+      openBtn.className = 'disc-history-btn';
+      openBtn.textContent = '\uC5F4\uAE30';
+      openBtn.title = '\uC0C8 \uD0ED\uC5D0\uC11C \uC5F4\uAE30';
+      openBtn.addEventListener('click', function() {
+        if (r.file_path) window.open(r.file_path, '_blank', 'noopener');
+      });
+      actions.appendChild(openBtn);
+
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'disc-history-btn';
+      dlBtn.textContent = '\uB2E4\uC6B4\uB85C\uB4DC';
+      dlBtn.addEventListener('click', function() {
+        if (!r.file_path) return;
+        var a = document.createElement('a');
+        a.href = r.file_path;
+        var date = (r.created_at || '').slice(0, 10);
+        a.download = '\uD1A0\uB860\uB9AC\uD3EC\uD2B8_' + (r.topic || 'discussion').slice(0, 30) + '_' + date + '.html';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+      actions.appendChild(dlBtn);
+
+      var delBtn = document.createElement('button');
+      delBtn.className = 'disc-history-btn disc-history-del';
+      delBtn.textContent = '\u00D7';
+      delBtn.title = '\uC0AD\uC81C';
+      delBtn.addEventListener('click', async function() {
+        if (!confirm('\uC774 \uB9AC\uD3EC\uD2B8\uB97C \uC0AD\uC81C\uD560\uAE4C\uC694?')) return;
+        try {
+          var resp = await fetch('/api/reports/discussion/' + encodeURIComponent(r.id), {
+            method: 'DELETE',
+            credentials: 'same-origin',
+          });
+          if (resp.ok) self._loadHistory();
+        } catch (_) { /* ignore */ }
+      });
+      actions.appendChild(delBtn);
+
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
+  }
+
+  _formatRelativeTime(isoStr) {
+    if (!isoStr) return '';
+    var t = new Date(isoStr).getTime();
+    if (isNaN(t)) return isoStr;
+    var diffSec = Math.floor((Date.now() - t) / 1000);
+    if (diffSec < 60)   return '\uBC29\uAE08';
+    if (diffSec < 3600) return Math.floor(diffSec / 60) + '\uBD84 \uC804';
+    if (diffSec < 86400) return Math.floor(diffSec / 3600) + '\uC2DC\uAC04 \uC804';
+    if (diffSec < 7 * 86400) return Math.floor(diffSec / 86400) + '\uC77C \uC804';
+    return new Date(isoStr).toLocaleDateString('ko-KR');
   }
 
   _getSelectedStyle() {
@@ -439,31 +581,69 @@ class DiscussionManager {
   async _recommendParticipants() {
     var topic = document.getElementById('disc-topic');
     if (!topic || !topic.value.trim()) {
-      if (topic) { topic.style.borderColor = 'var(--red)'; topic.placeholder = '토론 주제를 입력해 주세요'; setTimeout(function() { topic.style.borderColor = ''; }, 2000); }
+      if (topic) {
+        topic.style.borderColor = 'var(--red)';
+        topic.placeholder = '\uD1A0\uB860 \uC8FC\uC81C\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694';
+        setTimeout(function() { topic.style.borderColor = ''; }, 2000);
+      }
       return;
     }
-    var btn = this._container.querySelector('#disc-start-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '\uCD94\uCC9C \uC911...'; }
+
     var self = this;
+    var recBtn = document.getElementById('disc-recommend-btn');
+    var startBtn = document.getElementById('disc-start-btn');
+    var cards = document.getElementById('disc-participant-cards');
+
+    // Snapshot original state so we can restore on error
+    var prevRecText = recBtn ? recBtn.textContent : '';
+    var prevStartDisabled = startBtn ? startBtn.disabled : false;
+
+    if (recBtn) {
+      recBtn.disabled = true;
+      recBtn.classList.add('disc-loading');
+      recBtn.textContent = '\u23F3 \uCD94\uCC9C \uC900\uBE44 \uC911...';
+    }
+    if (startBtn) startBtn.disabled = true;
+    if (cards) cards.classList.add('disc-cards-loading');
+
     try {
       var resp = await fetch('/api/discussion/recommend-participants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topic.value.trim(), style: this._getSelectedStyle(), mode: this._discMode, count: 3 }),
+        body: JSON.stringify({
+          topic: topic.value.trim(),
+          style: this._getSelectedStyle(),
+          mode: this._discMode,
+          count: 3,
+        }),
       });
-      if (resp.ok) {
-        var data = await resp.json();
-        var participants = data.participants || [];
-        if (participants.length > 0) {
-          var cards = document.getElementById('disc-participant-cards');
-          if (cards) {
-            while (cards.firstChild) cards.removeChild(cards.firstChild);
-            participants.forEach(function(p) { self._addParticipantCard(p); });
-          }
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      var participants = data.participants || [];
+      if (participants.length > 0 && cards) {
+        while (cards.firstChild) cards.removeChild(cards.firstChild);
+        participants.forEach(function(p) { self._addParticipantCard(p); });
+      }
+    } catch (e) {
+      console.warn('Recommend API failed:', e);
+      if (recBtn) {
+        recBtn.textContent = '\u26A0 \uCD94\uCC9C \uC2E4\uD328 \u2014 \uB2E4\uC2DC \uC2DC\uB3C4';
+        setTimeout(function() {
+          if (recBtn) recBtn.textContent = prevRecText || '\uCC38\uAC00\uC790 \uCD94\uCC9C';
+        }, 2500);
+      }
+    } finally {
+      if (recBtn) {
+        recBtn.disabled = false;
+        recBtn.classList.remove('disc-loading');
+        // Only restore label if we didn't already set an error label above
+        if (recBtn.textContent.indexOf('\u23F3') === 0) {
+          recBtn.textContent = prevRecText || '\uCC38\uAC00\uC790 \uCD94\uCC9C';
         }
       }
-    } catch (e) { console.warn('Recommend API failed:', e); }
-    if (btn) { btn.disabled = false; btn.textContent = '\uD1A0\uB860 \uC2DC\uC791 \uD83D\uDE80'; }
+      if (startBtn) startBtn.disabled = prevStartDisabled;
+      if (cards) cards.classList.remove('disc-cards-loading');
+    }
   }
 
   /* ── Presets ── */
@@ -1006,6 +1186,9 @@ class DiscussionManager {
     while (doc.body.firstChild && doc.body.firstChild.firstChild) {
       tempDiv.appendChild(doc.body.firstChild.firstChild);
     }
+    /* Apply name highlighting on the parsed DOM tree (safe — text nodes only) */
+    this._highlightNamesInTree(tempDiv);
+
     msgDiv.appendChild(tempDiv);
     msgArea.appendChild(msgDiv);
     msgArea.scrollTop = msgArea.scrollHeight;
@@ -1146,24 +1329,93 @@ class DiscussionManager {
     if (el) el.textContent = text;
   }
 
-  /* ── Formatted content renderer ── */
+  /* ── Formatted content renderer ──
+     Uses marked.js (loaded globally — same pattern as
+     card-chat-panel.js's `markdown: true` opt for AI Company
+     clarification questions) so the model's headings, lists, ---,
+     blockquotes, code, and tables render as real HTML.
+     Falls back to a safe escape + bold-only path if marked is unavailable. */
   _renderContent(text) {
-    var s = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (typeof marked !== 'undefined') {
+      try { return marked.parse(text || ''); } catch (_) { /* fall through */ }
+    }
+    return this._renderContentFallback(text);
+  }
+
+  _renderContentFallback(text) {
+    var s = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = '<p>' + s.replace(/\n{2,}/g, '</p><p>') + '</p>';
-    s = s.replace(/\n/g, '<br>');
+    return s.replace(/\n/g, '<br>');
+  }
+
+  /* Apply participant-name highlighting after markdown parsing.
+     Walks text nodes only (not raw HTML) so we never corrupt link hrefs,
+     code blocks, or attributes. Wraps each match in a colored <span>. */
+  _highlightNamesInTree(rootEl) {
     var names = this._participantNames || {};
     var colors = this._participantColors || {};
+    var entries = [];
     for (var id in names) {
       if (!names[id]) continue;
-      var color = colors[id] || 'var(--cv-dim)';
       var escaped = names[id].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      s = s.replace(
-        new RegExp('(' + escaped + '(\uB2D8|\uC528|\uAD50\uC218|\uB300\uD45C|\uC120\uC0DD|\uC704\uC6D0)?)', 'g'),
-        '<span style="color:' + color + ';font-weight:600">$1</span>'
-      );
+      entries.push({
+        re: new RegExp(escaped + '(\uB2D8|\uC528|\uAD50\uC218|\uB300\uD45C|\uC120\uC0DD|\uC704\uC6D0)?', 'g'),
+        color: colors[id] || 'var(--cv-dim)',
+      });
     }
-    return s;
+    if (!entries.length) return;
+
+    var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        // Skip text inside code/pre/links — keep them pristine
+        var p = node.parentNode;
+        while (p && p !== rootEl) {
+          var tag = p.nodeName;
+          if (tag === 'CODE' || tag === 'PRE' || tag === 'A') return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    var targets = [];
+    var current;
+    while ((current = walker.nextNode())) targets.push(current);
+
+    targets.forEach(function(textNode) {
+      var orig = textNode.nodeValue;
+      var matches = [];
+      entries.forEach(function(entry) {
+        var iter = orig.matchAll(entry.re);
+        var item = iter.next();
+        while (!item.done) {
+          var m = item.value;
+          matches.push({ start: m.index, end: m.index + m[0].length, text: m[0], color: entry.color });
+          item = iter.next();
+        }
+      });
+      if (!matches.length) return;
+      matches.sort(function(a, b) { return a.start - b.start; });
+      var clean = [];
+      var lastEnd = -1;
+      matches.forEach(function(m) {
+        if (m.start >= lastEnd) { clean.push(m); lastEnd = m.end; }
+      });
+      var frag = document.createDocumentFragment();
+      var cursor = 0;
+      clean.forEach(function(m) {
+        if (m.start > cursor) frag.appendChild(document.createTextNode(orig.slice(cursor, m.start)));
+        var span = document.createElement('span');
+        span.style.color = m.color;
+        span.style.fontWeight = '600';
+        span.textContent = m.text;
+        frag.appendChild(span);
+        cursor = m.end;
+      });
+      if (cursor < orig.length) frag.appendChild(document.createTextNode(orig.slice(cursor)));
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
   }
 
   /* ═══════════════════════════════════════════════════

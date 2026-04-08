@@ -196,27 +196,158 @@ async def static_file(filename: str):
 
 
 # ── Discussion report history API ────────────────
-@app.get("/api/reports/discussion")
-async def list_discussion_reports(request: Request):
-    """List user's non-expired discussion reports."""
+def _reconcile_orphan_reports(owner_user_id: str) -> int:
+    """Find report files on disk that have no DB row and register them.
+
+    Why: if the WebSocket disconnects between the report node finishing and
+    the session emitting disc_report (e.g., browser closed during the
+    multi-minute report generation), the file gets written but the DB row
+    is never inserted. Without reconciliation, the report becomes invisible
+    to the history viewer.
+
+    The report node now writes a sidecar metadata.json (see report.py),
+    which gives us topic/participants/style. For pre-existing orphans
+    without metadata.json, we fall back to parsing the <h2> from the HTML
+    and using sensible defaults.
+
+    Returns the number of orphans backfilled. Best-effort: any single
+    failure is logged and skipped.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    from src.auth.models import UserDB
+
+    settings = get_settings()
+    base = _Path(settings.report_output_dir)
+    if not base.is_dir():
+        return 0
+
+    db = UserDB.get()
+    backfilled = 0
+    with db._conn() as conn:
+        for folder in base.glob("disc_*"):
+            if not folder.is_dir():
+                continue
+            report_file = folder / "report.html"
+            if not report_file.is_file():
+                continue
+            session_id = folder.name[len("disc_"):]
+            row = conn.execute(
+                "SELECT id FROM discussion_reports WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is not None:
+                continue  # already registered
+
+            # Try sidecar metadata.json first
+            meta_file = folder / "metadata.json"
+            topic = ""
+            participants: list[str] = []
+            style = "free"
+            created_at = ""
+            if meta_file.is_file():
+                try:
+                    import json as _json
+                    meta = _json.loads(meta_file.read_text(encoding="utf-8"))
+                    topic = str(meta.get("topic", "")).strip()
+                    participants = list(meta.get("participants", []) or [])
+                    style = str(meta.get("style", "free")) or "free"
+                    created_at = str(meta.get("created_at", "")) or ""
+                except Exception:
+                    pass
+
+            # Fallback: parse the <h2> heading from the HTML for the topic
+            if not topic:
+                try:
+                    html_text = report_file.read_text(encoding="utf-8", errors="replace")
+                    m = _re.search(r"<h2>(.*?)</h2>", html_text)
+                    if m:
+                        topic = _re.sub(r"<[^>]+>", "", m.group(1)).strip()
+                except Exception:
+                    pass
+            if not topic:
+                topic = "(\uC81C\uBAA9 \uC5C6\uB294 \uD1A0\uB860)"  # "(no title)"
+
+            # Use file mtime if no metadata timestamp available
+            if not created_at:
+                try:
+                    from datetime import datetime as _dt
+                    created_at = _dt.fromtimestamp(report_file.stat().st_mtime).isoformat()
+                except Exception:
+                    from datetime import datetime as _dt
+                    created_at = _dt.now().isoformat()
+
+            try:
+                from datetime import datetime as _dt, timedelta as _td
+                created_dt = _dt.fromisoformat(created_at)
+                expires_dt = created_dt + _td(days=db.REPORT_RETENTION_DAYS)
+                import json as _json
+                conn.execute(
+                    "INSERT INTO discussion_reports "
+                    "(id, user_id, topic, participants, style, created_at, expires_at, file_path) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (session_id, owner_user_id, topic,
+                     _json.dumps(participants, ensure_ascii=False), style,
+                     created_dt.isoformat(), expires_dt.isoformat(),
+                     f"/reports/{folder.name}/report.html"),
+                )
+                backfilled += 1
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "report_orphan_backfill_failed: %s (%s)", session_id, e,
+                )
+    return backfilled
+
+
+def _resolve_report_user_id(request: Request) -> str | None:
+    """Resolve the report owner ID for the current request.
+
+    - Membership enabled: require a valid hq_token cookie.
+    - Membership disabled: every caller is treated as the same
+      "anonymous" user, matching how reports are saved in
+      session.py / models.py:save_discussion_report.
+
+    Returns None if auth is required but missing/invalid.
+    """
+    if not _membership_enabled():
+        return "anonymous"
     token = request.cookies.get("hq_token", "")
     user = verify_token(token) if token else None
     if not user:
+        return None
+    return user["sub"]
+
+
+@app.get("/api/reports/discussion")
+async def list_discussion_reports(request: Request):
+    """List the caller's non-expired discussion reports (7-day window).
+
+    Before listing, scan disk for orphan report files (files that exist
+    but have no DB row — typically caused by browser disconnect during
+    report generation) and backfill them under the calling user's ID.
+    """
+    user_id = _resolve_report_user_id(request)
+    if user_id is None:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        _reconcile_orphan_reports(user_id)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("orphan_reconcile_failed: %s", e)
     from src.auth.models import UserDB
-    reports = UserDB.get().list_discussion_reports(user["sub"])
+    reports = UserDB.get().list_discussion_reports(user_id)
     return JSONResponse({"reports": reports})
 
 
 @app.delete("/api/reports/discussion/{report_id}")
 async def delete_discussion_report(report_id: str, request: Request):
     """Delete a specific discussion report."""
-    token = request.cookies.get("hq_token", "")
-    user = verify_token(token) if token else None
-    if not user:
+    user_id = _resolve_report_user_id(request)
+    if user_id is None:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     from src.auth.models import UserDB
-    deleted = UserDB.get().delete_discussion_report(report_id, user["sub"])
+    deleted = UserDB.get().delete_discussion_report(report_id, user_id)
     return JSONResponse({"deleted": deleted})
 
 

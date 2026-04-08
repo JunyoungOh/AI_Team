@@ -8,8 +8,7 @@ import time
 from pydantic import BaseModel
 
 from src.discussion.prompts.moderator import (
-    MODERATOR_HUMAN_SECTION, MODERATOR_SEARCH_SECTION,
-    MODERATOR_SYSTEM, STYLE_DESCRIPTIONS,
+    MODERATOR_HUMAN_SECTION, MODERATOR_SYSTEM, STYLE_DESCRIPTIONS,
 )
 from src.discussion.state import HUMAN_SPEAKER_ID, DiscussionState
 from src.utils.bridge_factory import get_bridge
@@ -21,7 +20,6 @@ class ModeratorDecision(BaseModel):
     next_speaker_id: str
     instruction: str
     reasoning: str = ""
-    needs_search: bool = False
 
 
 def _format_participants(config) -> str:
@@ -65,7 +63,6 @@ def _round_robin_fallback(state: DiscussionState) -> dict:
     return {
         "next_speaker_id": speaker_id,
         "moderator_instruction": f"{config.topic}에 대해 의견을 말씀해 주세요.",
-        "needs_search": False,
     }
 
 
@@ -83,12 +80,10 @@ async def moderator_turn(state: DiscussionState) -> dict:
         style_desc=STYLE_DESCRIPTIONS.get(config.style, STYLE_DESCRIPTIONS["free"]),
         conversation_so_far=_format_conversation(state["utterances"]),
     )
-    # Dynamically append human + search sections
+    # Dynamically append human section if a human participant is present
     extra = ""
     if config.human_participant:
         extra += MODERATOR_HUMAN_SECTION.format(human_name=config.human_participant.name)
-    from datetime import date
-    extra += MODERATOR_SEARCH_SECTION.format(today=date.today().isoformat())
     prompt = base_prompt + extra
 
     try:
@@ -119,5 +114,4 @@ async def moderator_turn(state: DiscussionState) -> dict:
     return {
         "next_speaker_id": speaker_id,
         "moderator_instruction": decision.instruction,
-        "needs_search": decision.needs_search,
     }

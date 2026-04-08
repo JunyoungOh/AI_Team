@@ -91,9 +91,21 @@ async def discussion_opening_prep(state: DiscussionState) -> dict:
 
 
 async def discussion_opening_speak(state: DiscussionState) -> dict:
-    """All participants give opening statements in parallel."""
+    """All participants give opening statements in parallel.
+
+    Each AI participant's first call creates a persistent Claude CLI session
+    via ``--session-id`` (UUID generated in setup). Subsequent rounds reuse
+    that session via ``--resume`` (see speak.py), so the
+    persona + topic system prompt is sent only once.
+
+    Cold-start cost: starting N CLI subprocesses simultaneously can race and
+    cause subprocess failures (the bug we hit before). A small semaphore
+    caps concurrent startups to 2, which empirically avoids the race while
+    still keeping opening fast.
+    """
     config = state["config"]
     bridge = get_bridge()
+    participant_sessions = state.get("participant_sessions") or {}
 
     # Recover opening_map from state (stored as JSON by prep node)
     raw = state.get("moderator_instruction", "")
@@ -101,6 +113,8 @@ async def discussion_opening_speak(state: DiscussionState) -> dict:
         opening_map = json.loads(raw) if raw else {}
     except (json.JSONDecodeError, TypeError):
         opening_map = {}
+
+    cold_start_sem = asyncio.Semaphore(2)
 
     async def _speak(participant):
         instruction = opening_map.get(participant.id, f"{config.topic}에 대한 입장을 밝혀주세요.")
@@ -111,19 +125,25 @@ async def discussion_opening_speak(state: DiscussionState) -> dict:
             conversation_so_far="(토론 시작 — 첫 발언입니다)",
             instruction=instruction,
         )
-        try:
-            text = await bridge.raw_query(
-                system_prompt=prompt,
-                user_message=instruction,
-                model=config.model_participant,
-                allowed_tools=[],
-                timeout=90,
-                max_turns=1,
-                effort="medium",
-            )
-        except Exception as e:
-            logger.warning("opening_speak_failed: %s (speaker=%s)", e, participant.id)
-            text = f"(기술적 문제로 {participant.name}의 오프닝 발언을 가져오지 못했습니다)"
+        sid = participant_sessions.get(participant.id)
+        async with cold_start_sem:
+            try:
+                text = await bridge.raw_query(
+                    system_prompt=prompt,
+                    user_message=instruction,
+                    model=config.model_participant,
+                    # WebSearch + WebFetch are Claude Code built-ins (no MCP
+                    # cold start). Speakers self-decide when to fact-check
+                    # instead of routing through a moderator gatekeeper.
+                    allowed_tools=["WebSearch", "WebFetch"],
+                    timeout=120,
+                    max_turns=2,  # 1 tool call + final answer if needed
+                    effort="medium",
+                    session_id=sid,
+                )
+            except Exception as e:
+                logger.warning("opening_speak_failed: %s (speaker=%s)", e, participant.id)
+                text = f"(기술적 문제로 {participant.name}의 오프닝 발언을 가져오지 못했습니다)"
         return Utterance(
             round=0,
             speaker_id=participant.id,
@@ -135,7 +155,6 @@ async def discussion_opening_speak(state: DiscussionState) -> dict:
     ai_participants = [p for p in config.participants if p.id != HUMAN_SPEAKER_ID]
     tasks = [_speak(p) for p in ai_participants]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    await bridge.close()
 
     utterances = []
     for r in results:
