@@ -45,15 +45,21 @@
 - `src/skill_builder/execution_streamer.py` — `single_session._stream_session` 패턴 복제, 콜백 기반 + DI 가능한 proc factory
 - `src/skill_builder/execution_runner.py` — 오케스트레이터, ISOLATED vs WITH_MCPS 분기
 - `/ws/skill-execute` WebSocket + `/api/skill-builder/runs/{slug}` REST GET
-- 카드 인라인 펼침 UI: 입력 textarea + 실시간 활동 로그 + 마크다운 결과 + 이력 토글
-- 격리 정책: `required_mcps == []` → cwd=/tmp + 빌트인 도구만 / `required_mcps != []` → 프로젝트 루트 + 명시된 mcp__ 도구만 (모든 모드에서 `--add-dir ~/.claude/skills/` 절대 금지)
+- 카드 인라인 펼침 UI: 큰 입력 textarea(220px) + 실시간 활동 로그 + 마크다운 결과 + 실행 횟수 카운트
+- 격리 정책: `required_mcps == []` → cwd=/tmp + 빌트인 도구만 / `required_mcps != []` → 프로젝트 루트 + 명시된 mcp__ 도구만
+- 설치 위치: `data/skills/installed/skill-tab-{slug}/` (Plan 1의 `~/.claude/skills/`는 권한 거부 때문에 마이그레이션됨)
+- handoff prompt rule 7: "초안 → 사용자 승인 → 저장" 3단계 흐름
+- handoff prompt rule 3: skill-creator의 한국어 인터뷰를 단일 세션 내에서 강제 수행
 - WebSocketDisconnect 시 runner task 자동 cancel로 서브프로세스 정리
 - 32개 단위 테스트 (Tasks 1-5 모두 TDD)
+- E2E 검증 완료 (Playwright): 인사 → 인터뷰 → 답변 → 초안 → 승인 → 저장 → 카드 등장 → 클릭 → 실행 → 결과 → 카운트 갱신
 
 **자동 트리거 차단의 다층 방어**:
-- 방어 1 (생성 시): handoff 프롬프트 rule 8이 description에서 트리거 어구 금지
-- 방어 2 (실행 시): `--add-dir ~/.claude/skills/`를 절대 사용하지 않음
-- 방어 3 (격리 모드): cwd=/tmp + 빌트인 도구만 → CLAUDE.md / 다른 스킬 / 프로젝트 파일 모두 차단
+- 방어 1 (생성 시 description): handoff 프롬프트 rule 8이 description에서 트리거 어구 금지 (검증됨 — 생성된 description "입력받은 텍스트의 전체 글자수를 세어 ... 형식으로 반환합니다"는 중립)
+- 방어 2 (저장 위치): `data/skills/installed/`는 Claude Code의 자동 발견 영역 밖이라 description matching 자체가 불가능 (방어 2가 가장 강력한 층)
+- 방어 3 (실행 시): `--add-dir ~/.claude/skills/`를 절대 사용하지 않음
+- 방어 4 (격리 모드): cwd=/tmp + 빌트인 도구만 → CLAUDE.md / 다른 스킬 / 프로젝트 파일 모두 차단
+- 방어 5 (system prompt 직접 주입): 카드 클릭 시 SKILL.md 본문을 메모리로 읽어 system prompt에 주입. CLI는 file system에서 SKILL.md를 발견하지 않음
 
 ## 스킬 탭 — Plan 3: 카드 실행 스케줄링 (미착수)
 
@@ -67,6 +73,90 @@
 - WebSocket 재연결 지원 (페이지 새로고침 시 진행 중 실행 복구)
 - 임시 작업 디렉터리 + 최소 .mcp.json 기반 강화 격리 (WITH_MCPS 모드)
 - 카드 UI에서 timeout 사용자 조정
+
+## 스킬 탭 — Plan 4 후보: 파일 입력 + 카드 메타 표시 (미착수, 우선순위 높음)
+
+E2E 테스트(2026-04-09)에서 발견된 사용자 피드백 + xlsx 변환 스킬 검증 결과:
+
+### 1. 파일 입력 지원 — 디자인 결정 필요
+
+xlsx 변환 스킬 검증 결과, **격리 모드에서도 파일이 cwd(/tmp) 안에 있으면 접근 가능** 함이 입증됨. 두 옵션 비교:
+
+**옵션 A: 매번 절대 경로 입력 (현재 동작)**
+- 사용자가 textarea에 파일 절대 경로를 적음
+- 단점 1: cwd=/tmp 격리 모드는 /tmp 외부 파일을 못 읽음 → 사용자는 파일을 /tmp에 미리 복사해야 함
+- 단점 2: "/Users/.../report.xlsx" 같은 긴 경로 입력 부담
+- 장점: 백엔드 변경 0
+
+**옵션 B: 앱 안에 conventional 폴더 (`data/skills/file_for_skill/`)**
+- 사용자가 파일을 `data/skills/file_for_skill/` 폴더에 미리 복사
+- textarea에는 파일명만 적음 (예: "report.xlsx")
+- 백엔드: cwd를 `data/skills/file_for_skill/`로 변경 OR `--add-dir` 으로 노출
+- 장점 1: 사용자가 짧은 파일명만 입력
+- 장점 2: 폴더 한 곳에 파일을 모아 관리 (Finder/Explorer로 열어 폴더 정리 가능)
+- 장점 3: 격리 강도 유지 — `data/skills/file_for_skill/`만 노출, 다른 디스크 영역은 차단
+- 단점: 사용자가 파일을 미리 복사하는 단계 필요
+
+**옵션 C: 브라우저 업로드 (드래그앤드롭)**
+- 카드 폼에 `<input type="file">` 또는 drop zone
+- 백엔드가 `data/skills/uploads/<run_id>/`에 임시 저장
+- 장점: UX가 가장 친숙
+- 단점: 큰 파일 처리, temp cleanup, multipart POST 등 인프라 부담
+
+**권장 시작점**: **옵션 B + 옵션 C 결합**. 옵션 B는 단순해서 빠르게 출시 가능하고, 옵션 C는 후속으로 추가. 옵션 A(절대 경로)는 cwd 변경 없이 지원해도 부수효과 — 사용자가 파일을 conventional 폴더에 두든 /tmp에 두든 둘 다 작동.
+
+### 2. 사용 안내(usage_notes)의 영구 표시 — 카드 메타 확장
+
+**문제**: skill-creator가 저장 직후 마지막 채팅 메시지에 "(사전에 pip install openpyxl이 설치되어 있어야 합니다.)" 같은 중요 안내를 함. 하지만 카드를 다시 열면 이 정보가 휘발되어 사용자가 잊어버림.
+
+**해결**:
+- `skill_metadata.json`에 `usage_notes: ["사전에 pip install openpyxl이 필요합니다", "..."]` 배열 필드 추가
+- handoff prompt rule 7 Stage 3에 "필요한 사용 안내·전제 조건은 반드시 `skill_metadata.json`의 `usage_notes` 배열에 기록"라고 명시
+- `SkillRecord`에 `usage_notes: list[str]` 필드 추가, registry.json에 함께 저장
+- mode-skill.js의 카드 렌더에 `usage_notes` 영역 추가 — 카드 안에 노란색 박스로 "📌 사용 안내" 섹션
+- 카드 인라인 펼침 시에도 보임
+
+### 3. 카드 description 정제 (현재 = 사용자의 첫 description, 권장 = SKILL.md frontmatter description)
+
+현재 카드 제목은 사용자가 첫 입력한 긴 한국어 문장 ("받은 텍스트의 글자수를 세어서..."). skill-creator가 정제한 frontmatter description ("입력받은 텍스트의 전체 글자수를 세어 ...")이 더 정확하고 간결함. 카드 제목을 frontmatter description으로 교체하거나, 둘 다 보여주는 옵션 (제목 = 정제, 부제목 = 사용자 원문).
+
+### 4. UI 진행 표시 개선
+
+스킬 만들기 단계에서 "skill-creator 시작 중... (약 20초)" 외에 진행 상황 인디케이터 부재. 응답 대기 중 사용자가 "멈춘 건가?" 의문을 가질 수 있음.
+- 진행 단계 표시기 (인사 → 인터뷰 → 답변 → 초안 → 저장)
+- 또는 spinner + "응답 대기 중 (Ns 경과)" 카운터
+
+### 5. 이력 상세 조회 페이지 (낮은 우선순위)
+
+현재 카드는 카운트만 표시. 백엔드에는 이미 `data/skills/runs/<slug>/<run_id>.json`으로 이력이 다 저장되고 있음. 향후 필요해지면 별도 페이지/모달로 과거 실행을 조회 가능.
+
+### 6. 스킬 수정/삭제 기능
+
+현재 카드 수정/삭제 UI 없음. 파일 직접 수정 + registry 수정 필요.
+
+### 7. 응답 출력 정제 — 한국어 강제 + 사고 과정 노출 금지
+
+**문제**: xlsx 변환 스킬 실행 시 결과 첫 줄이 모델의 메타 reasoning으로 시작:
+> "The skill was already loaded in the system prompt. Let me follow its instructions and run the conversion script. 변환 결과입니다: ..."
+
+두 가지 누수가 한꺼번에:
+- (a) 영어 reasoning 노출 (handoff prompt는 만들기 단계만 한국어 강제, SKILL.md 본문에는 지시 없음)
+- (b) 메타 사고("The skill was already loaded...")가 사용자가 원하는 결과(마크다운 표) 앞에 섞임
+
+**해결**: handoff prompt rule 7 Stage 3에 지시 추가 — SKILL.md 본문 마지막에 항상 두 섹션을 자동 포함:
+- `## 응답 언어`: 모든 응답·사고는 한국어로 작성
+- `## 응답 형식`: 사용자가 요청한 출력만 반환. "이 스킬을 따르겠습니다", "skill is loaded", "Let me..." 같은 메타 메시지/내부 reasoning 일체 금지. 결과만.
+
+### 8. Skill 도구의 의도치 않은 노출 (낮은 우선순위, 정보용)
+
+xlsx 검증 시 Claude Code CLI가 `Skill` 도구를 자동 노출함이 발견됨 (allowed_tools=`["Read","Write","Edit","Bash","Glob","Grep"]`인데도). 다행히 cwd=/tmp + `--add-dir` 미사용 덕분에 다른 스킬 발견은 못 함 → 격리는 유지됨. 이건 Claude Code CLI 동작이라 우리가 비활성화할 수 없을 가능성이 높지만, **모니터링 필요**.
+
+## 학습된 사항 (다음 plan에 적용할 것)
+
+1. **`--add-dir`와 권한 시스템의 차이**: `--add-dir`는 디렉터리 접근/탐색은 허용하지만, `~/.claude/` 같은 시스템 보호 영역에 대한 *쓰기*는 별도 prompt로 차단됨. headless 모드(`-p`)는 prompt에 답할 TTY가 없어 거부됨. 시스템 영역에 쓰려는 헤드리스 흐름은 금물.
+2. **untracked working tree의 위험**: Plan 1 전체가 git에 한 번도 커밋되지 않은 채 working tree에서만 살아있어, 다른 세션의 작업 중에 일부가 손실될 수 있음. 새 모듈은 작성 즉시 커밋하는 습관 필요.
+3. **closure 캡처 버그 패턴**: `historyToggle.onclick = function(){ renderHistory(historyEl, runs) }`처럼 closure로 fetch 결과를 캡처하면, 이후 갱신이 반영 안 됨. 매번 fresh fetch 함수를 호출하는 게 더 견고. 또는 기능 자체를 단순화(이 경우엔 토글 제거)하면 closure 문제도 자동 해결.
+4. **plan-document-reviewer가 잡은 patch 경로 버그**: 함수 내부에서 import한 함수를 patch할 때는 *source 모듈* 경로를 patch해야 한다. `src.ui.server.run_skill` 패치는 작동 안 함 → `src.skill_builder.execution_runner.run_skill`을 패치해야 함. 사전 리뷰의 가치 입증.
 
 ---
 
