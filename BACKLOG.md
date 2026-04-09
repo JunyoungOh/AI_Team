@@ -35,6 +35,41 @@
 
 ---
 
+## 스킬 탭 — Plan 2: 카드 실행 ✅ 완료 (2026-04-09)
+
+**참고**: docs/superpowers/plans/2026-04-09-skill-tab-plan2.md
+
+**완료 범위**:
+- `src/skill_builder/skill_loader.py` — registry → SKILL.md 본문 + skill_metadata.json 로드, IsolationMode 결정
+- `src/skill_builder/run_history.py` — `data/skills/runs/<slug>/<run_id>.json` atomic CRUD
+- `src/skill_builder/execution_streamer.py` — `single_session._stream_session` 패턴 복제, 콜백 기반 + DI 가능한 proc factory
+- `src/skill_builder/execution_runner.py` — 오케스트레이터, ISOLATED vs WITH_MCPS 분기
+- `/ws/skill-execute` WebSocket + `/api/skill-builder/runs/{slug}` REST GET
+- 카드 인라인 펼침 UI: 입력 textarea + 실시간 활동 로그 + 마크다운 결과 + 이력 토글
+- 격리 정책: `required_mcps == []` → cwd=/tmp + 빌트인 도구만 / `required_mcps != []` → 프로젝트 루트 + 명시된 mcp__ 도구만 (모든 모드에서 `--add-dir ~/.claude/skills/` 절대 금지)
+- WebSocketDisconnect 시 runner task 자동 cancel로 서브프로세스 정리
+- 32개 단위 테스트 (Tasks 1-5 모두 TDD)
+
+**자동 트리거 차단의 다층 방어**:
+- 방어 1 (생성 시): handoff 프롬프트 rule 8이 description에서 트리거 어구 금지
+- 방어 2 (실행 시): `--add-dir ~/.claude/skills/`를 절대 사용하지 않음
+- 방어 3 (격리 모드): cwd=/tmp + 빌트인 도구만 → CLAUDE.md / 다른 스킬 / 프로젝트 파일 모두 차단
+
+## 스킬 탭 — Plan 3: 카드 실행 스케줄링 (미착수)
+
+**전제**: Plan 2 완료
+**범위**:
+- 기존 스케줄팀(`card-mode-schedule`) 인프라에 "스킬 실행" 작업 타입 추가
+- 스케줄 등록 UI에서 스킬 + 입력값 사전 지정
+- 자동 실행 시 `execution_runner.run_skill()` 호출 + 결과를 run_history에 저장
+- 스킬 실행 결과를 스케줄 보고서와 동일 구조로 HTML/MD 이중 생성
+- run history 자동 회전 (예: 카드당 최근 50건 유지)
+- WebSocket 재연결 지원 (페이지 새로고침 시 진행 중 실행 복구)
+- 임시 작업 디렉터리 + 최소 .mcp.json 기반 강화 격리 (WITH_MCPS 모드)
+- 카드 UI에서 timeout 사용자 조정
+
+---
+
 ## 미구현 사항
 
 ### 1. 아키텍처
