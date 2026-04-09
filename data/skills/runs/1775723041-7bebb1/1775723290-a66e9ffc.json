@@ -1,0 +1,11 @@
+{
+  "run_id": "1775723290-a66e9ffc",
+  "slug": "1775723041-7bebb1",
+  "user_input": "안녕하세요 세상! 오늘은 날씨가 정말 좋네요.",
+  "result_text": "총 24자입니다",
+  "status": "completed",
+  "tool_count": 0,
+  "duration_seconds": 11.5,
+  "started_at": "2026-04-09T08:28:10.044285+00:00",
+  "error_message": null
+}

@@ -1,0 +1,11 @@
+{
+  "run_id": "1775723615-99b0d099",
+  "slug": "1775723041-7bebb1",
+  "user_input": "한글 다섯 글자",
+  "result_text": "총 5자입니다",
+  "status": "completed",
+  "tool_count": 0,
+  "duration_seconds": 5.87,
+  "started_at": "2026-04-09T08:33:35.711493+00:00",
+  "error_message": null
+}

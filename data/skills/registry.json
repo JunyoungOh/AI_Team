@@ -1,0 +1,18 @@
+[
+  {
+    "slug": "1775723041-7bebb1",
+    "name": "받은 텍스트의 글자수를 세어서 \"총 N자입니다\" 형식으로 답해줘",
+    "skill_path": "/Users/elvis.costello/Desktop/backup_web_local/data/skills/installed/skill-tab-1775723041-7bebb1",
+    "required_mcps": [],
+    "source": "created",
+    "created_at": "2026-04-09T08:26:43.884770+00:00"
+  },
+  {
+    "slug": "xlsx-table",
+    "name": "xlsx 엑셀 파일을 받아서 첫 시트의 내용을 마크다운 표(table) 형식으로 변환해줘",
+    "skill_path": "/Users/elvis.costello/Desktop/backup_web_local/data/skills/installed/skill-tab-xlsx-table",
+    "required_mcps": [],
+    "source": "created",
+    "created_at": "2026-04-09T08:42:45.626793+00:00"
+  }
+]
