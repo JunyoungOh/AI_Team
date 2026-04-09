@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "_comment": "수동 큐레이션 allowlist. Anthropic 공식 + 검증된 커뮤니티 마켓. 새 마켓 추가 전에 라이선스와 출처를 확인하세요.",
+  "allowlist": [
+    "claude-plugins-official",
+    "superpowers-marketplace"
+  ],
+  "min_unique_installs": 1000,
+  "stale_threshold_days": 60
+}

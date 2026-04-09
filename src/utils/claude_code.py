@@ -701,6 +701,7 @@ class ClaudeCodeBridge:
         effort: str | None = None,
         session_id: str | None = None,
         resume: str | None = None,
+        extra_dirs: list[str] | None = None,
     ) -> str:
         """Run Claude Code and return the full text from all assistant turns.
 
@@ -715,6 +716,9 @@ class ClaudeCodeBridge:
             resume: Optional session ID to resume an existing conversation.
                 The CLI will load the prior conversation state from disk,
                 so the user_message should contain ONLY the new turn.
+            extra_dirs: Additional directories to grant tool access to via
+                ``--add-dir``. Needed when writing to paths outside cwd
+                (e.g. ``~/.claude/skills/`` from a ``/tmp`` cwd).
         """
         if not user_message or not user_message.strip():
             user_message = "(context provided in system prompt)"
@@ -741,6 +745,9 @@ class ClaudeCodeBridge:
             # Headless mode (-p) has no TTY for permission prompts.
             # --permission-mode auto pre-approves tools in --allowedTools.
             cmd.extend(["--permission-mode", "auto"])
+        if extra_dirs:
+            for d in extra_dirs:
+                cmd.extend(["--add-dir", d])
 
         # Skip MCP when all tools are built-ins or none needed
         skip_mcp = (
