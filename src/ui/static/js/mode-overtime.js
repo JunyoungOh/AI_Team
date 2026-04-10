@@ -17,6 +17,7 @@ var OvertimeManager = (function () {
   var _devTask = '';
   var _devSessionId = '';
   var _devQuestions = '';
+  var _devPaused = false;
 
   function mountInShell(container) {
     _container = container;
@@ -32,6 +33,8 @@ var OvertimeManager = (function () {
 
   function _render() {
     if (!_container) return;
+    // 개발 모드 진행 중이면 화면 보존 (탭 이동 후 복귀 시 리셋 방지)
+    if (_running && _otMode === 'dev' && document.getElementById('dev-progress')) return;
     _loadStrategies();
     while (_container.firstChild) _container.removeChild(_container.firstChild);
 
@@ -725,6 +728,14 @@ var OvertimeManager = (function () {
 
     wrap.appendChild(phaseBar);
 
+    // Stop button
+    var stopBtn = document.createElement('button');
+    stopBtn.id = 'dev-stop-btn';
+    stopBtn.className = 'dev-stop-btn';
+    stopBtn.textContent = '■ 중지';
+    stopBtn.onclick = function () { _handleDevStop(); };
+    wrap.appendChild(stopBtn);
+
     // Log area
     var logArea = document.createElement('div');
     logArea.id = 'dev-log';
@@ -846,6 +857,111 @@ var OvertimeManager = (function () {
 
     logArea.appendChild(linkWrap);
     _running = false;
+    // 스탑 버튼 숨기기
+    var stopBtn = document.getElementById('dev-stop-btn');
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+
+  function _handleDevStop() {
+    if (_devPaused) return;
+    _devPaused = true;
+
+    // CLI 프로세스 중지 요청
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      _ws.send(JSON.stringify({ type: 'stop_overtime' }));
+    }
+
+    _addDevLog('일시정지되었습니다', 'rate_limited');
+
+    // 스탑 버튼을 재개/종료 버튼으로 교체
+    var stopBtn = document.getElementById('dev-stop-btn');
+    if (stopBtn) stopBtn.style.display = 'none';
+
+    var logArea = document.getElementById('dev-log');
+    if (!logArea) return;
+
+    var pauseWrap = document.createElement('div');
+    pauseWrap.id = 'dev-pause-controls';
+    pauseWrap.style.cssText = 'margin-top:12px;padding:16px;background:var(--surface,#161B22);border:1px solid var(--border,rgba(255,255,255,0.08));border-radius:8px;';
+
+    var pauseMsg = document.createElement('p');
+    pauseMsg.style.cssText = 'color:var(--text,#E6EDF3);font-size:14px;margin-bottom:12px;';
+    pauseMsg.textContent = '개발이 일시정지되었습니다. 원하실 때 재개 또는 종료를 선택해주세요.';
+    pauseWrap.appendChild(pauseMsg);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;';
+
+    var resumeBtn = document.createElement('button');
+    resumeBtn.className = 'ot-start-btn';
+    resumeBtn.style.cssText += 'flex:1;';
+    resumeBtn.textContent = '▶ 재개';
+    resumeBtn.onclick = function () { _resumeDev(); };
+    btnRow.appendChild(resumeBtn);
+
+    var terminateBtn = document.createElement('button');
+    terminateBtn.style.cssText = 'flex:1;padding:10px 16px;background:var(--red,#E94560);border:none;border-radius:8px;color:white;cursor:pointer;font-size:14px;font-weight:600;';
+    terminateBtn.textContent = '■ 종료';
+    terminateBtn.onclick = function () { _terminateDev(); };
+    btnRow.appendChild(terminateBtn);
+
+    pauseWrap.appendChild(btnRow);
+    logArea.appendChild(pauseWrap);
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function _resumeDev() {
+    _devPaused = false;
+
+    // 일시정지 컨트롤 제거
+    var ctrl = document.getElementById('dev-pause-controls');
+    if (ctrl) ctrl.remove();
+
+    // 스탑 버튼 다시 표시
+    var stopBtn = document.getElementById('dev-stop-btn');
+    if (stopBtn) stopBtn.style.display = '';
+
+    _addDevLog('개발을 재개합니다', 'session_start');
+
+    // 새 개발 세션 시작 (handoff로 이어받기)
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      _ws.send(JSON.stringify({
+        type: 'start_dev',
+        data: {
+          task: _devTask,
+          answers: '',
+          session_id: _devSessionId,
+          workspace_files: [],
+        },
+      }));
+    }
+  }
+
+  function _terminateDev() {
+    _devPaused = false;
+    _running = false;
+
+    // 일시정지 컨트롤 제거
+    var ctrl = document.getElementById('dev-pause-controls');
+    if (ctrl) ctrl.remove();
+
+    // 스탑 버튼 숨기기
+    var stopBtn = document.getElementById('dev-stop-btn');
+    if (stopBtn) stopBtn.style.display = 'none';
+
+    _addDevLog('개발이 종료되었습니다. 현재까지 작성된 파일은 앱 폴더에 남아있습니다.', 'complete');
+
+    // 앱 폴더 열기 버튼 추가
+    var logArea = document.getElementById('dev-log');
+    if (logArea) {
+      var folderBtn = document.createElement('button');
+      folderBtn.style.cssText = 'margin-top:8px;padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:14px;';
+      folderBtn.textContent = '📁 앱 폴더 열기';
+      folderBtn.onclick = function () {
+        fetch('/api/workspace/overtime/open', { method: 'POST' }).catch(function () {});
+      };
+      logArea.appendChild(folderBtn);
+    }
   }
 
   function _buildOtStrategyPicker() {
