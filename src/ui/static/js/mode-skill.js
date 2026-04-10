@@ -19,6 +19,7 @@ var SkillManager = (function () {
   var _replyBtn = null;
   var _replyRow = null;
   var _lastDescription = '';
+  var _createWsPanel = null;
 
   function mountInShell(container) {
     _container = container;
@@ -65,6 +66,8 @@ var SkillManager = (function () {
     input.className = 'skill-create-input';
     input.placeholder = '예: 긴 텍스트를 3줄로 요약해줘';
     root.appendChild(input);
+
+    _createWsPanel = WorkspacePanel.create(root, 'skill');
 
     var log = document.createElement('div');
     log.className = 'skill-chat-log';
@@ -320,6 +323,9 @@ var SkillManager = (function () {
     runBtn.className = 'skill-exec-run-btn';
     runBtn.textContent = '실행';
     form.appendChild(runBtn);
+
+    var skillWsPanel = WorkspacePanel.create(form, 'skill');
+
     panel.appendChild(form);
 
     var log = document.createElement('div');
@@ -360,13 +366,13 @@ var SkillManager = (function () {
       while (log.firstChild) log.removeChild(log.firstChild);
       log.style.display = '';
       result.style.display = 'none';
-      _startExecution(skill, input, log, result, runBtn, textarea, _refreshRunCount);
+      _startExecution(skill, input, log, result, runBtn, textarea, _refreshRunCount, skillWsPanel);
     };
 
     textarea.focus();
   }
 
-  function _startExecution(skill, input, logEl, resultEl, runBtn, textarea, refreshRunCount) {
+  function _startExecution(skill, input, logEl, resultEl, runBtn, textarea, refreshRunCount, wsPanel) {
     var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
     _execWs = new WebSocket(proto + location.host + '/ws/skill-execute');
 
@@ -382,7 +388,7 @@ var SkillManager = (function () {
       appendLog('▶ 실행 시작', 'started');
       _execWs.send(JSON.stringify({
         type: 'execute',
-        data: { slug: skill.slug, user_input: input },
+        data: { slug: skill.slug, user_input: input, workspace_files: wsPanel ? wsPanel.getSelectedFiles() : [] },
       }));
     };
 
@@ -439,9 +445,10 @@ var SkillManager = (function () {
 
     _ws.onopen = function () {
       _appendSystem(logEl, '연결됨');
+      var wsFiles = _createWsPanel ? _createWsPanel.getSelectedFiles() : [];
       _ws.send(JSON.stringify({
         type: 'start',
-        data: { description: description },
+        data: { description: description, workspace_files: wsFiles },
       }));
     };
 

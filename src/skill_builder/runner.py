@@ -64,6 +64,7 @@ async def run_skill_builder_session(ws: "WebSocket") -> None:
         return
 
     description = (msg.get("data") or {}).get("description", "").strip()
+    workspace_files = (msg.get("data") or {}).get("workspace_files", [])
     if not description:
         await ws.send_json(
             {
@@ -128,12 +129,13 @@ async def run_skill_builder_session(ws: "WebSocket") -> None:
         return
 
     # 5) 세션 resume 루프 — skill-creator가 자체 인터뷰부터 저장까지 한 세션에서 수행
-    await _run_skill_creator_loop(ws, description)
+    await _run_skill_creator_loop(ws, description, workspace_files=workspace_files)
 
 
 async def _run_skill_creator_loop(
     ws: "WebSocket",
     description: str,
+    workspace_files: list[str] | None = None,
 ) -> None:
     """skill-creator를 세션 resume 방식으로 다중 턴 호출.
 
@@ -175,11 +177,19 @@ async def _run_skill_creator_loop(
     allowed = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
     extra_dirs = [str(install_root)]
 
+    from src.utils.workspace import read_files_as_context
+
+    effective_desc = description
+    if workspace_files:
+        file_ctx = read_files_as_context("skill", workspace_files)
+        if file_ctx:
+            effective_desc = description + "\n\n" + file_ctx
+
     # 첫 턴: 세션 시작
     try:
         response = await bridge.raw_query(
             system_prompt=system_prompt,
-            user_message=description,
+            user_message=effective_desc,
             model="sonnet",
             allowed_tools=allowed,
             max_turns=30,
