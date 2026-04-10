@@ -129,3 +129,27 @@
   display: block; font-size: 13px; font-weight: 500;
   color: var(--dim, #8b949e); margin-bottom: 6px; margin-top: 12px;
 }
+
+/* 개발 모드 질문 영역 — 마크다운 렌더링 */
+.dev-questions-text {
+  font-size: 14px; color: var(--text, #E6EDF3); line-height: 1.8;
+  margin-bottom: 16px; padding: 16px;
+  background: var(--surface, #161B22); border-radius: 8px;
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+.dev-questions-text ol, .dev-questions-text ul {
+  padding-left: 20px; margin: 8px 0;
+}
+.dev-questions-text li {
+  margin-bottom: 10px; line-height: 1.6;
+}
+.dev-questions-text strong {
+  color: var(--blue, #60a5fa);
+}
+.dev-questions-text code {
+  background: rgba(255,255,255,0.08); padding: 1px 5px;
+  border-radius: 3px; font-size: 0.9em;
+}
+.dev-questions-text p {
+  margin: 6px 0;
+}

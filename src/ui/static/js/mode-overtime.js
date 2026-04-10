@@ -273,8 +273,16 @@ var OvertimeManager = (function () {
     } else if (type === 'overtime_iteration') {
       _handleIteration(data);
     } else if (type === 'overtime_activity') {
-      // 도구 사용 활동 — 현재 iteration 카드에 카운터 업데이트
-      _updateActivityCount(data);
+      // 도구 사용 활동
+      if (_otMode === 'dev') {
+        // 개발 모드: 실시간 도구 사용 — 마지막 도구 줄을 갱신
+        var label = data.label || data.tool || '도구';
+        var count = data.count || 0;
+        _updateDevToolStatus(label, count);
+      } else {
+        // 리서치 모드: 기존 iteration 카드 카운터 업데이트
+        _updateActivityCount(data);
+      }
     } else if (type === 'overtime_started') {
       // started
     } else if (type === 'overtime_stopped') {
@@ -605,11 +613,15 @@ var OvertimeManager = (function () {
     title.textContent = '몇 가지만 확인할게요';
     panel.appendChild(title);
 
-    // 질문 표시 (AI가 생성한 텍스트를 줄바꿈으로 분리)
+    // 질문 표시 — marked.js로 마크다운 렌더링 (기존 card-chat-panel.js 패턴)
     var qText = document.createElement('div');
     qText.className = 'dev-questions-text';
-    qText.style.cssText = 'white-space:pre-wrap;font-size:14px;color:#E6EDF3;line-height:1.8;margin-bottom:16px;padding:16px;background:var(--surface,#161B22);border-radius:8px;border:1px solid var(--border,rgba(255,255,255,0.08));';
-    qText.textContent = questions;
+    try {
+      /* marked.parse is the standard API — same pattern as card-chat-panel.js:135 */
+      qText.innerHTML = marked.parse(questions); // eslint-disable-line no-unsanitized/property
+    } catch (_) {
+      qText.textContent = questions;
+    }
     panel.appendChild(qText);
 
     // 답변 textarea
@@ -757,6 +769,20 @@ var OvertimeManager = (function () {
     if (phase === 'report' && action === 'complete' && data.report_path) {
       _addDevReportLink(data.report_path, data.app_dir);
     }
+  }
+
+  function _updateDevToolStatus(label, count) {
+    var logArea = document.getElementById('dev-log');
+    if (!logArea) return;
+    var el = document.getElementById('dev-tool-status');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'dev-tool-status';
+      el.style.cssText = 'padding:6px 0;font-size:13px;color:var(--blue,#60a5fa);border-bottom:1px solid var(--border,rgba(255,255,255,0.08));';
+      logArea.appendChild(el);
+    }
+    el.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+    logArea.scrollTop = logArea.scrollHeight;
   }
 
   function _addDevLog(message, type) {
