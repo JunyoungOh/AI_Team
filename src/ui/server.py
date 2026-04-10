@@ -69,6 +69,25 @@ app.include_router(discussion_router)
 app.include_router(workspace_router)
 
 
+# ── Claude Code Usage API ─────────────────────────
+import json as _json
+
+_USAGE_FILE = Path("/tmp/claude-usage.json")
+
+
+@app.get("/api/usage")
+async def get_usage():
+    """Claude Code CLI 구독 사용량 반환 (statusline에서 저장한 JSON)."""
+    if not _USAGE_FILE.exists():
+        return {"available": False}
+    try:
+        data = _json.loads(_USAGE_FILE.read_text())
+        data["available"] = True
+        return data
+    except Exception:
+        return {"available": False}
+
+
 def _membership_enabled() -> bool:
     """Membership system is active when MEMBERSHIP_ENABLED is True (default)."""
     return get_settings().membership_enabled

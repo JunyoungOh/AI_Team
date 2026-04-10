@@ -461,5 +461,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       mm.selectMode('instant');
     }
+    // Claude Code 사용량 바 마운트
+    if (typeof UsageBar !== 'undefined') UsageBar.mount();
   }
 });

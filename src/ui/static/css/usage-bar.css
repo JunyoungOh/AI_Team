@@ -1,0 +1,62 @@
+/* usage-bar.css — Claude Code 구독 사용량 바 */
+.usage-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-right: 8px;
+}
+.usage-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dim, #8b949e);
+}
+.usage-bar-label {
+  font-weight: 600;
+  font-size: 10px;
+  color: var(--dim, #8b949e);
+  min-width: 18px;
+}
+.usage-bar-track {
+  position: relative;
+  width: 80px;
+  height: 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.usage-bar-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: 3px;
+  transition: width 0.6s ease, background 0.3s;
+}
+.usage-bar-fill.level-ok {
+  background: var(--blue, #60a5fa);
+}
+.usage-bar-fill.level-warn {
+  background: var(--yellow, #FFB74D);
+}
+.usage-bar-fill.level-danger {
+  background: var(--red, #E94560);
+}
+.usage-bar-pct {
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 28px;
+  text-align: right;
+}
+.usage-bar-pct.level-ok { color: var(--blue, #60a5fa); }
+.usage-bar-pct.level-warn { color: var(--yellow, #FFB74D); }
+.usage-bar-pct.level-danger { color: var(--red, #E94560); }
+.usage-bar-reset {
+  font-size: 9px;
+  color: var(--dim, #8b949e);
+  opacity: 0.7;
+}
+.usage-bar-unavailable {
+  font-size: 10px;
+  color: var(--dim, #8b949e);
+  opacity: 0.5;
+}
