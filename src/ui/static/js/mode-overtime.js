@@ -771,18 +771,34 @@ var OvertimeManager = (function () {
     }
   }
 
+  var _lastToolLabel = '';
+
   function _updateDevToolStatus(label, count) {
     var logArea = document.getElementById('dev-log');
     if (!logArea) return;
-    var el = document.getElementById('dev-tool-status');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'dev-tool-status';
-      el.style.cssText = 'padding:6px 0;font-size:13px;color:var(--blue,#60a5fa);border-bottom:1px solid var(--border,rgba(255,255,255,0.08));';
-      logArea.appendChild(el);
+
+    if (label === _lastToolLabel) {
+      // 같은 도구 연속 → 마지막 줄 카운트만 갱신
+      var lastEl = document.getElementById('dev-tool-last');
+      if (lastEl) {
+        lastEl.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+        logArea.scrollTop = logArea.scrollHeight;
+        return;
+      }
     }
+
+    // 도구가 바뀜 → 이전 줄의 id 제거 (더 이상 갱신 안 됨)
+    var prev = document.getElementById('dev-tool-last');
+    if (prev) prev.removeAttribute('id');
+
+    // 새 줄 추가
+    var el = document.createElement('div');
+    el.id = 'dev-tool-last';
+    el.style.cssText = 'padding:4px 0;font-size:12px;color:var(--blue,#60a5fa);border-bottom:1px solid var(--border,rgba(255,255,255,0.08));';
     el.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+    logArea.appendChild(el);
     logArea.scrollTop = logArea.scrollHeight;
+    _lastToolLabel = label;
   }
 
   function _addDevLog(message, type) {
