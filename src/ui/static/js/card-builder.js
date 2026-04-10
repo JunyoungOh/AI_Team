@@ -535,12 +535,13 @@ var CardBuilder = (function () {
       }
     }
 
-    // 안내 메시지
+    // 안내 메시지 (마크다운 포함 — markdown: true 명시)
     var info = _TYPE_INFO[type];
     if (_chatPanel) {
       _chatPanel.addMessage(
         info.icon + ' **' + info.label + '** 방식을 설계합니다. 어떤 분석이 필요한지 알려주세요.',
-        'system'
+        'system',
+        { markdown: true }
       );
       _chatPanel.setInputPlaceholder(
         type === 'schedule' ? '정기 모니터링할 내용을 알려주세요...' :
@@ -611,7 +612,7 @@ var CardBuilder = (function () {
 
   /* ── Public API ── */
 
-  function sendMessage(text) {
+  function sendMessage(text, wsFiles) {
     // 타입 미선택 시 안내
     if (_useStrategyMode && !_typeSelected && !_currentStrategy) {
       if (_chatPanel) _chatPanel.addMessage('먼저 방식 유형을 선택해주세요.', 'system');
@@ -635,7 +636,9 @@ var CardBuilder = (function () {
     _pendingEditMode = false;
     // 싱글 세션 모드에서는 전략 설계 에이전트로 전달
     var msgType = _useStrategyMode ? 'strategy_message' : 'builder_message';
-    _send({ type: msgType, data: { content: text } });
+    var msgData = { content: text };
+    if (wsFiles && wsFiles.length > 0) msgData.workspace_files = wsFiles;
+    _send({ type: msgType, data: msgData });
   }
 
   function saveCurrentTeam(name, description) {

@@ -33,6 +33,9 @@ var CardView = (function () {
     secretary: 'AI 비서'
   };
 
+  /* ── WorkspacePanel instance ── */
+  var _wsPanel = null;
+
   /* ── Boot tracking for lazy-init modes ── */
   var _modeBooted = {};
 
@@ -98,6 +101,14 @@ var CardView = (function () {
       } else {
         _chatPanel.setInputPlaceholder('업무를 지시하세요...');
       }
+    }
+
+    // WorkspacePanel 마운트 (채팅 입력 위, card-chat 컨테이너에 삽입)
+    if (_wsPanel) { _wsPanel.destroy(); _wsPanel = null; }
+    var chatContainer = document.getElementById('card-chat');
+    if (chatContainer && typeof WorkspacePanel !== 'undefined') {
+      var wsMode = (mode === 'builder') ? 'builder' : 'instant';
+      _wsPanel = WorkspacePanel.create(chatContainer, wsMode);
     }
 
     // 실행 중인 모드로 복귀하면 UI 복원
@@ -214,6 +225,15 @@ var CardView = (function () {
         el.classList.toggle('active', el.dataset.tab === tab);
       });
     }
+
+    // ⚠️ 중요: 어느 탭으로 전환하든 현재 로드된 전략을 먼저 초기화한다.
+    // 그렇지 않으면 "저장된 방식에서 카드 클릭 → 새 방식 만들기 탭으로 전환
+    // → 텍스트 입력" 시, getCurrentStrategy()가 여전히 이전 카드를 돌려주어
+    // 새 방식 만들기 탭이 "이미 설계된 전략이니 실행하자"로 잘못 분기한다.
+    // (`_editSavedStrategy`는 switchBuilderSubTab 호출 후 loadAndDisplayStrategy를
+    // 다시 호출하므로 영향 없음.)
+    if (CardBuilder.loadAndDisplayStrategy) CardBuilder.loadAndDisplayStrategy(null);
+
     var chatMode = 'builder-' + tab;
     if (_chatPanel) {
       _chatPanel.switchMode(chatMode);
@@ -226,8 +246,6 @@ var CardView = (function () {
         // 탭 전환할 때마다 목록을 새로 렌더링 (새로 저장된 방식 반영)
         while (_chatPanel.messagesEl.firstChild) _chatPanel.messagesEl.removeChild(_chatPanel.messagesEl.firstChild);
         _renderSavedStrategyList();
-        // 전략 초기화 (이전 탭의 전략이 남아있지 않도록)
-        if (CardBuilder.loadAndDisplayStrategy) CardBuilder.loadAndDisplayStrategy(null);
       }
       if (_chatPanel.messagesEl.childNodes.length === 0) {
         var welcomeMsg = WELCOME[chatMode] || '';
@@ -494,7 +512,8 @@ var CardView = (function () {
               var fmtLabels = { markdown: 'Markdown', csv: 'CSV', json: 'JSON' };
               _chatPanel.addMessage('📎 출력 형식: ' + (fmtLabels[fmt] || fmt), 'system');
             }
-            _sendWS({ type: 'start', task: text, output_format: fmt });
+            var wsFiles = _wsPanel ? _wsPanel.getSelectedFiles() : [];
+            _sendWS({ type: 'start', task: text, output_format: fmt, workspace_files: wsFiles, workspace_mode: 'instant' });
           } else if (retries < 50) {
             retries++;
             setTimeout(sendStart, 100);
@@ -545,7 +564,7 @@ var CardView = (function () {
             _chatPanel.showThinking();
             _chatPanel.setInputPlaceholder(isEditing ? '방식 수정 중...' : '방식 설계 중...');
           }
-          CardBuilder.sendMessage(text);
+          CardBuilder.sendMessage(text, _wsPanel ? _wsPanel.getSelectedFiles() : []);
         }
       } else if (_builderSubTab === 'saved') {
         // 저장된 방식 탭
@@ -556,7 +575,7 @@ var CardView = (function () {
             _chatPanel.showThinking();
             _chatPanel.setInputPlaceholder('방식 수정 중...');
           }
-          CardBuilder.sendMessage(text);
+          CardBuilder.sendMessage(text, _wsPanel ? _wsPanel.getSelectedFiles() : []);
         } else if (savedStrategy) {
           // 방식 로드됨 + 수정 모드 아님 → 실행
           _startStrategyExecution(text, savedStrategy);
@@ -583,7 +602,8 @@ var CardView = (function () {
     var retries = 0;
     var sendStart = function () {
       if (_wsReady) {
-        _sendWS({ type: 'start', task: text, strategy: strategy });
+        var wsFiles = _wsPanel ? _wsPanel.getSelectedFiles() : [];
+        _sendWS({ type: 'start', task: text, strategy: strategy, workspace_files: wsFiles, workspace_mode: 'builder' });
       } else if (retries < 50) {
         retries++;
         setTimeout(sendStart, 100);
