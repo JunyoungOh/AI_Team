@@ -836,6 +836,83 @@ async def overtime_endpoint(ws: WebSocket):
                     _overtime_task.cancel()
                     await ws.send_json({"type": "overtime_stopped", "data": {}})
 
+            elif msg_type == "start_dev_clarify":
+                data = msg.get("data", {})
+                dev_task = data.get("task", "")
+                _session_id = str(uuid.uuid4())[:8]
+
+                from src.overtime.dev_runner import generate_clarify_questions
+
+                drain_task = asyncio.create_task(_drain_events())
+                try:
+                    questions = await generate_clarify_questions(dev_task, _session_id)
+                    await ws.send_json({
+                        "type": "dev_clarify_questions",
+                        "data": {"questions": questions, "session_id": _session_id},
+                    })
+                except Exception as e:
+                    await ws.send_json({
+                        "type": "error",
+                        "data": {"message": f"질문 생성 실패: {e}"},
+                    })
+                finally:
+                    drain_task.cancel()
+
+            elif msg_type == "start_dev":
+                data = msg.get("data", {})
+                dev_task = data.get("task", "")
+                dev_answers = data.get("answers", "")
+                workspace_files = data.get("workspace_files", [])
+                dev_session_id = data.get("session_id", str(uuid.uuid4())[:8])
+                _session_id = dev_session_id
+
+                from src.utils.workspace import read_files_as_context
+                file_ctx = read_files_as_context("overtime", workspace_files) if workspace_files else ""
+
+                ot = storage.save_overtime(user_id, {
+                    "name": f"[DEV] {dev_task[:40]}",
+                    "task": dev_task,
+                    "mode": "dev",
+                    "status": "running",
+                    "session_id": _session_id,
+                    "iterations": [],
+                    "current_iteration": 0,
+                })
+                ot_id = ot.get("id", "")
+
+                await ws.send_json({"type": "dev_started", "data": {"session_id": _session_id}})
+
+                from src.overtime.dev_runner import run_dev_overtime
+
+                drain_task = asyncio.create_task(_drain_events())
+                _overtime_task = asyncio.create_task(
+                    run_dev_overtime(
+                        task=dev_task, answers=dev_answers,
+                        session_id=_session_id, user_id=user_id,
+                        overtime_id=ot_id, file_context=file_ctx,
+                    )
+                )
+
+                try:
+                    await _overtime_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error("dev_overtime_error: %s", e, exc_info=True)
+                    try:
+                        await ws.send_json({"type": "error", "data": {"message": str(e)[:500]}})
+                    except Exception:
+                        pass
+                finally:
+                    q = get_mode_event_queue(_session_id)
+                    while not q.empty():
+                        try:
+                            await ws.send_json(q.get_nowait())
+                        except Exception:
+                            break
+                    drain_task.cancel()
+
             elif msg_type == "list_overtimes":
                 overtimes = storage.list_overtimes(user_id)
                 await ws.send_json({"type": "overtime_list", "data": {"overtimes": overtimes}})
