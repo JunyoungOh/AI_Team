@@ -208,6 +208,7 @@ async def run_overtime(
     user_id: str = "",
     max_iterations: int = 5,
     overtime_id: str = "",
+    file_context: str = "",  # NEW
 ) -> str:
     """야근팀 전체 루프 실행. 완료 시 report_dir 반환."""
     from src.company_builder.storage import update_overtime_iteration
@@ -219,6 +220,10 @@ async def run_overtime(
 
     previous_eval = None
     iteration = 0
+
+    effective_task = task
+    if file_context:
+        effective_task = task + "\n\n" + file_context
 
     for iteration in range(1, max_iterations + 1):
         _logger.info("overtime_iteration_start", iteration=iteration, session_id=session_id)
@@ -234,7 +239,7 @@ async def run_overtime(
 
         # 1. 수집 세션 (rate limit 시 대기 후 재시도)
         system, user = build_iteration_prompt(
-            task=task, strategy=strategy, goal=goal,
+            task=effective_task, strategy=strategy, goal=goal,
             iteration=iteration, work_dir=work_dir,
             previous_eval=previous_eval,
         )

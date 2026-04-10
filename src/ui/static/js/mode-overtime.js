@@ -11,6 +11,7 @@ var OvertimeManager = (function () {
   var _running = false;
   var _strategies = [];
   var _selectedStrategy = null;
+  var _otWsPanel = null;
 
   function mountInShell(container) {
     _container = container;
@@ -108,6 +109,12 @@ var OvertimeManager = (function () {
     form.appendChild(fmtLabel);
     form.appendChild(fmtSelect);
 
+    // 워크스페이스 파일
+    var wsSection = document.createElement('div');
+    wsSection.className = 'ot-field';
+    _otWsPanel = WorkspacePanel.create(wsSection, 'overtime');
+    form.appendChild(wsSection);
+
     // 시작 버튼
     var startBtn = document.createElement('button');
     startBtn.className = 'ot-start-btn';
@@ -183,6 +190,7 @@ var OvertimeManager = (function () {
         } else if (answers && answers.length > 0) {
           payload.clarify_answers = answers;
         }
+        payload.workspace_files = _otWsPanel ? _otWsPanel.getSelectedFiles() : [];
         _ws.send(JSON.stringify({
           type: 'start_overtime',
           data: payload,

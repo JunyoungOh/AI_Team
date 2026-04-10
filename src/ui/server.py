@@ -741,6 +741,7 @@ async def overtime_endpoint(ws: WebSocket):
 
             elif msg_type == "start_overtime":
                 data = msg.get("data", {})
+                workspace_files = data.get("workspace_files", [])
                 task = data.get("task", "")
                 strategy = data.get("strategy")
                 goal = data.get("goal", "충분한 데이터 확보")
@@ -781,11 +782,14 @@ async def overtime_endpoint(ws: WebSocket):
                 }})
 
                 # 이벤트 drain + 실행을 동시 시작
+                from src.utils.workspace import read_files_as_context
+                file_ctx = read_files_as_context("overtime", workspace_files) if workspace_files else ""
                 drain_task = asyncio.create_task(_drain_events())
                 _overtime_task = asyncio.create_task(run_overtime(
                     task=task, strategy=strategy, goal=goal,
                     session_id=_session_id, user_id=user_id,
                     max_iterations=max_iterations, overtime_id=ot["id"],
+                    file_context=file_ctx,
                 ))
 
                 try:
@@ -922,6 +926,14 @@ async def skill_execute_endpoint(ws: WebSocket):
         data = msg.get("data") or {}
         slug = (data.get("slug") or "").strip()
         user_input = data.get("user_input") or ""
+        workspace_files = data.get("workspace_files", [])
+
+        from src.utils.workspace import read_files_as_context
+        file_ctx = read_files_as_context("skill", workspace_files) if workspace_files else ""
+        effective_input = user_input
+        if file_ctx:
+            effective_input = user_input + "\n\n" + file_ctx
+
         if not slug:
             await ws.send_json({
                 "type": "error",
@@ -954,7 +966,7 @@ async def skill_execute_endpoint(ws: WebSocket):
         async def runner_task():
             return await run_skill(
                 slug=slug,
-                user_input=user_input,
+                user_input=effective_input,
                 on_event=on_event,
             )
 
