@@ -42,7 +42,12 @@ def _get_bridge():
 
 
 def _require_auth(request: Request) -> dict | None:
-    """Return user payload or None."""
+    """Return user payload or None.
+
+    membership 비활성 시 기본 user를 반환하여 로컬 버전에서 인증 없이 작동.
+    """
+    if not get_settings().membership_enabled:
+        return {"sub": "local"}
     return get_current_user(request)
 
 
