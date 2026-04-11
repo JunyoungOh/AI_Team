@@ -591,6 +591,7 @@ var CardView = (function () {
 
   function _startStrategyExecution(text, strategy) {
     _running = true;
+    _runningMode = 'builder';
     CardEventHandler.reset();
     document.getElementById('card-stop-btn').style.display = '';
     if (_chatPanel) {
@@ -620,6 +621,7 @@ var CardView = (function () {
 
   function _startTeamExecution(text, teamId) {
     _running = true;
+    _runningMode = 'builder';
     CardEventHandler.reset();
     document.getElementById('card-stop-btn').style.display = '';
     _connectWS();
