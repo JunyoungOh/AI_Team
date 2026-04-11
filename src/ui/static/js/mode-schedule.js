@@ -207,6 +207,9 @@ var ScheduleTeamManager = (function () {
     addBtn.textContent = '+ 스케줄 추가';
     addBtn.addEventListener('click', function () {
       var task = document.getElementById('st-task').value.trim();
+      if (!task && _selectedStrategy) {
+        task = _selectedStrategy.name || '';
+      }
       if (!task) return;
       addBtn.disabled = true;
       addBtn.textContent = '질문 생성 중...';
