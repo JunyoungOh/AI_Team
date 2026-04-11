@@ -46,7 +46,7 @@ def test_max_sessions_has_hard_cap():
 
 def test_get_rate_limit_wait_no_file():
     """사용량 파일 없으면 (300, False) 반환 — rate limit이 아닌 일반 오류로 처리."""
-    with patch("src.overtime.dev_runner._USAGE_FILE", Path("/tmp/nonexistent_file_xyz")):
+    with patch("src.overtime.runner._USAGE_FILE", Path("/tmp/nonexistent_file_xyz")):
         wait, is_rl = _get_rate_limit_wait()
         assert is_rl is False
 
@@ -57,7 +57,7 @@ def test_get_rate_limit_wait_low_usage(tmp_path):
     usage_file.write_text(json.dumps({
         "five_hour": {"used_percentage": 30, "resets_at": 9999999999},
     }))
-    with patch("src.overtime.dev_runner._USAGE_FILE", usage_file):
+    with patch("src.overtime.runner._USAGE_FILE", usage_file):
         wait, is_rl = _get_rate_limit_wait()
         assert is_rl is False
 
@@ -70,7 +70,7 @@ def test_get_rate_limit_wait_high_usage(tmp_path):
     usage_file.write_text(json.dumps({
         "five_hour": {"used_percentage": 95, "resets_at": future_reset},
     }))
-    with patch("src.overtime.dev_runner._USAGE_FILE", usage_file):
+    with patch("src.overtime.runner._USAGE_FILE", usage_file):
         wait, is_rl = _get_rate_limit_wait()
         assert is_rl is True
         assert 500 <= wait <= 700  # ~600 + 30s buffer, within range

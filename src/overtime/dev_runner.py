@@ -27,6 +27,7 @@ from src.overtime.dev_prompts import (
 from src.overtime.runner import (
     RateLimitError,
     _run_cli_session,
+    _get_rate_limit_wait,
 )
 from src.utils.logging import get_logger
 
@@ -36,7 +37,6 @@ _DEV_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent"]
 _REPORT_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
 
 MAX_SESSIONS = 10
-_USAGE_FILE = Path("/tmp/claude-usage.json")
 _COMPLETION_MARKER = "ALL_PHASES_DONE"
 
 
@@ -46,39 +46,6 @@ def _emit(session_id: str, phase: str, action: str, **kwargs):
         "type": "dev_progress",
         "data": {"phase": phase, "action": action, **kwargs},
     })
-
-
-def _get_rate_limit_wait() -> tuple[int, bool]:
-    """사용량 파일에서 대기 시간 계산.
-
-    Returns:
-        (wait_seconds, is_rate_limit):
-        - is_rate_limit=True: 실제 rate limit. wait_seconds만큼 대기 후 재개
-        - is_rate_limit=False: rate limit이 아닌 다른 오류
-    """
-    if not _USAGE_FILE.exists():
-        return 300, False  # 파일 없으면 판단 불가 → 일반 오류로 처리
-
-    try:
-        data = json.loads(_USAGE_FILE.read_text())
-    except Exception:
-        return 300, False
-
-    five_hour = data.get("five_hour") or {}
-    used_pct = five_hour.get("used_percentage", 0)
-    resets_at = five_hour.get("resets_at")
-
-    # 사용량 80% 미만이면 rate limit이 아닌 다른 오류
-    if used_pct < 80:
-        return 0, False
-
-    # resets_at이 있으면 정확한 대기 시간 계산
-    if resets_at:
-        wait = max(int(resets_at - time.time()) + 30, 60)  # 30초 여유
-        return min(wait, 7200), True  # 최대 2시간 캡
-
-    # resets_at 없지만 사용량이 높으면 기본 5분
-    return 300, True
 
 
 async def _run_with_rate_limit_retry(

@@ -38,10 +38,11 @@ _OVERTIME_TOOLS = [
 _EVAL_TOOLS = ["Read", "Glob"]
 
 SCORE_THRESHOLD = 90
-RATE_LIMIT_COOLDOWN_DEFAULT = 300  # 기본 5분 대기
 
 # rate limit 감지 키워드
 _RATE_LIMIT_SIGNALS = ["rate_limit", "rate limit", "overloaded", "429", "quota"]
+
+_USAGE_FILE = Path("/tmp/claude-usage.json")
 
 
 class RateLimitError(Exception):
@@ -51,32 +52,34 @@ class RateLimitError(Exception):
         super().__init__(message)
 
 
-def _parse_cooldown_seconds(error_text: str) -> int:
-    """에러 메시지에서 대기 시간을 추출. 못 찾으면 기본값 반환.
+def _get_rate_limit_wait() -> tuple[int, bool]:
+    """사용량 파일에서 대기 시간 계산.
 
-    CLI 에러에 "retry after X seconds", "reset in X minutes",
-    "try again in Xm Ys" 등의 패턴이 있을 수 있음.
+    Returns:
+        (wait_seconds, is_rate_limit):
+        - is_rate_limit=True: 실제 rate limit. wait_seconds만큼 대기 후 재개
+        - is_rate_limit=False: rate limit이 아닌 다른 오류
     """
-    import re
-    # "retry after 300 seconds" 또는 "after 300s"
-    m = re.search(r"(?:retry|wait|after)\s+(\d+)\s*(?:s|sec|seconds)", error_text, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    # "in 5 minutes" 또는 "in 5m"
-    m = re.search(r"in\s+(\d+)\s*(?:m|min|minutes)", error_text, re.IGNORECASE)
-    if m:
-        return int(m.group(1)) * 60
-    # "reset at HH:MM" (UTC 또는 로컬)
-    m = re.search(r"reset\s+(?:at\s+)?(\d{1,2}):(\d{2})", error_text, re.IGNORECASE)
-    if m:
-        from datetime import datetime, timedelta
-        now = datetime.now()
-        reset_time = now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0)
-        if reset_time <= now:
-            reset_time += timedelta(days=1)
-        wait = (reset_time - now).total_seconds()
-        return max(60, int(wait))  # 최소 1분
-    return RATE_LIMIT_COOLDOWN_DEFAULT
+    if not _USAGE_FILE.exists():
+        return 300, False
+
+    try:
+        data = json.loads(_USAGE_FILE.read_text())
+    except Exception:
+        return 300, False
+
+    five_hour = data.get("five_hour") or {}
+    used_pct = five_hour.get("used_percentage", 0)
+    resets_at = five_hour.get("resets_at")
+
+    if used_pct < 80:
+        return 0, False
+
+    if resets_at:
+        wait = max(int(resets_at - time.time()) + 30, 60)
+        return min(wait, 7200), True
+
+    return 300, True
 
 
 async def _run_cli_session(
@@ -237,7 +240,7 @@ async def run_overtime(
             },
         })
 
-        # 1. 수집 세션 (rate limit 시 대기 후 재시도)
+        # 1. 수집 세션 (rate limit 시 리셋까지 대기 후 자동 재개)
         system, user = build_iteration_prompt(
             task=effective_task, strategy=strategy, goal=goal,
             iteration=iteration, work_dir=work_dir,
@@ -245,58 +248,73 @@ async def run_overtime(
         )
 
         iter_start = time.time()
-        for attempt in range(3):  # 최대 3회 재시도
+        non_rl_attempts = 0
+        while True:
             try:
                 await _run_cli_session(
                     system_prompt=system, user_prompt=user,
                     tools=_OVERTIME_TOOLS, session_id=session_id,
                     model=settings.worker_model, max_turns=60, timeout=420,
                 )
-                break  # 성공
-            except RateLimitError as e:
-                cooldown = _parse_cooldown_seconds(e.message)
-                cooldown_min = cooldown // 60
-                _logger.warning("overtime_rate_limit_hit", iteration=iteration, attempt=attempt + 1, cooldown_s=cooldown)
+                break
+            except RateLimitError:
+                wait_sec, is_rl = _get_rate_limit_wait()
+                if not is_rl:
+                    non_rl_attempts += 1
+                    if non_rl_attempts >= 3:
+                        break
+                    emit_mode_event(session_id, {
+                        "type": "overtime_iteration",
+                        "data": {"action": "retry", "iteration": iteration,
+                                 "message": f"일시 오류 — 재시도 ({non_rl_attempts}/3)"},
+                    })
+                    await asyncio.sleep(30)
+                    continue
+                wait_min = wait_sec // 60
+                _logger.warning("overtime_rate_limit_hit", iteration=iteration, wait_s=wait_sec)
                 emit_mode_event(session_id, {
                     "type": "overtime_iteration",
                     "data": {
                         "action": "rate_limited",
                         "iteration": iteration,
-                        "message": f"⏸️ 사용량 한도 도달 — {cooldown_min}분 후 자동 재시도 ({attempt + 1}/3)",
-                        "cooldown": cooldown,
+                        "message": f"⏸️ 사용량 한도 도달 — {wait_min}분 후 자동 재개",
+                        "cooldown": wait_sec,
+                        "resume_at": int(time.time()) + wait_sec,
                     },
                 })
                 if overtime_id and user_id:
                     update_overtime_iteration(user_id, overtime_id, {
-                        "id": f"{iteration}_pause_{attempt}",
+                        "id": f"{iteration}_pause",
                         "action": "rate_limited",
-                        "cooldown_s": cooldown,
-                        "message": e.message,
+                        "cooldown_s": wait_sec,
                     }, status="paused")
-                await asyncio.sleep(cooldown)
+                await asyncio.sleep(wait_sec)
         iter_elapsed = round(time.time() - iter_start, 1)
 
-        # 2. 평가 세션
+        # 2. 평가 세션 (rate limit 시 리셋까지 대기)
         eval_system, eval_user = build_evaluation_prompt(work_dir, goal, iteration)
-        try:
-            eval_text = await _run_cli_session(
-                system_prompt=eval_system, user_prompt=eval_user,
-                tools=_EVAL_TOOLS, session_id=session_id,
-                model=settings.worker_model, max_turns=10, timeout=120,
-            )
-        except RateLimitError as e:
-            cooldown = _parse_cooldown_seconds(e.message)
-            _logger.warning("overtime_eval_rate_limited", iteration=iteration, cooldown_s=cooldown)
-            emit_mode_event(session_id, {
-                "type": "overtime_iteration",
-                "data": {"action": "rate_limited", "message": f"⏸️ 평가 중 한도 도달 — {cooldown // 60}분 후 재시도"},
-            })
-            await asyncio.sleep(cooldown)
-            eval_text = await _run_cli_session(
-                system_prompt=eval_system, user_prompt=eval_user,
-                tools=_EVAL_TOOLS, session_id=session_id,
-                model=settings.worker_model, max_turns=10, timeout=120,
-            )
+        while True:
+            try:
+                eval_text = await _run_cli_session(
+                    system_prompt=eval_system, user_prompt=eval_user,
+                    tools=_EVAL_TOOLS, session_id=session_id,
+                    model=settings.worker_model, max_turns=10, timeout=120,
+                )
+                break
+            except RateLimitError:
+                wait_sec, is_rl = _get_rate_limit_wait()
+                if not is_rl:
+                    eval_text = ""
+                    break
+                _logger.warning("overtime_eval_rate_limited", iteration=iteration, wait_s=wait_sec)
+                emit_mode_event(session_id, {
+                    "type": "overtime_iteration",
+                    "data": {"action": "rate_limited",
+                             "message": f"⏸️ 평가 중 한도 도달 — {wait_sec // 60}분 후 자동 재개",
+                             "cooldown": wait_sec,
+                             "resume_at": int(time.time()) + wait_sec},
+                })
+                await asyncio.sleep(wait_sec)
 
         eval_result = _parse_eval_json(eval_text)
         score = eval_result.get("score", 0)
@@ -343,7 +361,8 @@ async def run_overtime(
     })
 
     final_system, final_user = build_final_report_prompt(task, work_dir, report_dir)
-    for attempt in range(3):
+    non_rl_attempts = 0
+    while True:
         try:
             await _run_cli_session(
                 system_prompt=final_system, user_prompt=final_user,
@@ -351,14 +370,23 @@ async def run_overtime(
                 model=settings.worker_model, max_turns=40, timeout=300,
             )
             break
-        except RateLimitError as e:
-            cooldown = _parse_cooldown_seconds(e.message)
-            _logger.warning("overtime_final_report_rate_limited", attempt=attempt + 1, cooldown_s=cooldown)
+        except RateLimitError:
+            wait_sec, is_rl = _get_rate_limit_wait()
+            if not is_rl:
+                non_rl_attempts += 1
+                if non_rl_attempts >= 3:
+                    break
+                await asyncio.sleep(30)
+                continue
+            _logger.warning("overtime_final_report_rate_limited", wait_s=wait_sec)
             emit_mode_event(session_id, {
                 "type": "overtime_iteration",
-                "data": {"action": "rate_limited", "message": f"⏸️ 보고서 생성 중 한도 도달 — {cooldown // 60}분 후 재시도 ({attempt + 1}/3)"},
+                "data": {"action": "rate_limited",
+                         "message": f"⏸️ 보고서 생성 중 한도 도달 — {wait_sec // 60}분 후 자동 재개",
+                         "cooldown": wait_sec,
+                         "resume_at": int(time.time()) + wait_sec},
             })
-            await asyncio.sleep(cooldown)
+            await asyncio.sleep(wait_sec)
 
     # fallback
     report_path = Path(report_dir) / "results.html"
