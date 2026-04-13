@@ -60,53 +60,47 @@ _DEV_SYSTEM = """\
 모든 파일은 반드시 `{work_dir}/` 아래에 생성하세요.
 먼저 `mkdir -p {work_dir}` 를 실행하세요.
 
-## 개발 절차 (이 순서를 반드시 따르세요)
+## 개발 절차 (Phase 1 → Phase 6 순서로 진행)
 
-### Phase 1: 개발 계획 수립
-- 앱 구조, 파일 목록, 기술 스택을 정리한 계획을 `{work_dir}/PLAN.md`에 작성
-- 로컬 실행이 목표이므로 복잡한 인프라 없이 가능한 단순한 스택 선택
-- Python(Flask/FastAPI) + HTML/CSS/JS 또는 순수 HTML/CSS/JS 권장
+### Phase 1: 사전 리서치 (선택적)
+지시사항에 다음이 있으면 리서치 후 Phase 2로 진행:
+- 특정 외부 라이브러리/프레임워크 이름이 명시됨
+- 도메인 지식이 필요한 기능 (암호화, PDF, 차트, 파싱 등)
+- 참고 앱/서비스 언급
 
-### Phase 2: 계획 자체 검토
-- PLAN.md를 다시 읽고, 누락된 기능이나 비현실적 부분을 수정
-- 수정사항이 있으면 PLAN.md를 업데이트
+단순 CRUD/HTML UI면 스킵하고 바로 Phase 2로.
 
-### Phase 3: 코드 개발
-- PLAN.md에 따라 파일을 하나씩 생성
-- 각 파일 작성 후 문법 오류 체크 (python: `python3 -c "import ast; ast.parse(open('file').read())"`)
-- Python 패키지 의존성이 있으면 `{work_dir}/requirements.txt` 생성
-- 앱 실행을 하나로 묶은 `{work_dir}/start.sh` 생성 (venv 자동 생성 + 의존성 설치 + 앱 실행)
-- 프론트엔드 디자인 원칙:
-  - 깔끔하고 현대적인 UI — 충분한 여백, 명확한 시각적 계층 구조
-  - 다크 모드 우선 색상 팔레트: 배경 #0D1117, 표면 #161B22, 텍스트 #E6EDF3, 강조 #60a5fa
-  - 부드러운 border-radius, 미세한 그림자, 깔끔한 타이포그래피
-  - 반응형 레이아웃 (모바일에서도 사용 가능)
-  - 트랜지션과 호버 효과로 인터랙션 피드백
+**규칙**: `WebSearch`로 최대 3회 조회. **로컬 실행 가능한 자료만** (클라우드 전용 서비스 제외). 찾은 내용을 `{work_dir}/RESEARCH.md`에 출처 URL과 함께 기록. 리서치했으면 이 파일이 반드시 존재해야 함.
 
-### Phase 4: 점검 및 수정 (통과할 때까지 반복)
-이 Phase는 **모든 점검을 통과할 때까지 반복**합니다.
+### Phase 2: 개발 계획
+`{work_dir}/PLAN.md`에 앱 구조, 파일 목록, 기술 스택 정리. 단순한 스택 우선 (Python Flask/FastAPI + HTML/CSS/JS 또는 순수 HTML/CSS/JS). Phase 1 리서치 결과가 있으면 반영.
 
-1. 의존성이 있으면 venv를 만들어 설치: `python3 -m venv {work_dir}/.venv && {work_dir}/.venv/bin/pip install -r {work_dir}/requirements.txt`
-2. 앱을 실제 실행하고, 모든 기능이 정상 동작하는지 확인 (서버 앱이면 curl로 각 엔드포인트 검증)
-3. 코드 문법 오류, 엣지케이스, 누락된 기능이 없는지 전체 점검
-4. 오류가 있으면 코드 수정 → **2번부터 다시 반복**
-5. 오류가 없으면 테스트 서버 종료 후 Phase 5로 진행
+### Phase 3: 계획 검토
+PLAN.md 재검토 후 수정사항 있으면 업데이트.
 
-### Phase 5: 진행 상황 최종 기록
-- `{work_dir}/PROGRESS.md`를 업데이트하되, 마지막 줄에 반드시 다음 마커를 추가:
-  `ALL_PHASES_DONE`
-- 이 마커는 자동화 시스템이 완료를 감지하는 데 사용됩니다. 반드시 포함하세요.
+### Phase 4: 코드 개발
+PLAN.md에 따라 파일 생성. 작성 후 문법 체크. Python 의존성은 `requirements.txt`, 실행 스크립트는 `start.sh`(venv + 설치 + 실행 자동화)로 묶음.
 
-## PROGRESS.md 업데이트 규칙
-- 각 Phase 시작/완료 시 `{work_dir}/PROGRESS.md`를 업데이트
-- 형식: `## Phase N: [완료/진행중] - [요약]`
-- 이 파일은 세션이 끊어질 경우 다음 세션이 이어받기 위한 핵심 문서
-- **모든 Phase가 끝나면 마지막 줄에 `ALL_PHASES_DONE` 추가**
+프론트엔드 UI: 다크 모드 팔레트 (#0D1117 배경, #161B22 표면, #E6EDF3 텍스트, #60a5fa 강조), 여백과 반응형 기본.
+
+### Phase 5: 점검 (통과까지 반복)
+1. venv에 의존성 설치
+2. 앱 실행하고 모든 기능 검증 (서버면 curl로 엔드포인트 확인)
+3. 오류 있으면 코드 수정 후 1번부터 재시작
+4. 통과하면 테스트 서버 종료 후 Phase 6으로
+
+### Phase 6: 완료 기록
+`{work_dir}/PROGRESS.md`의 마지막 줄에 반드시 추가:
+`ALL_PHASES_DONE`
+
+## PROGRESS.md 규칙
+각 Phase 시작/완료 시 `{work_dir}/PROGRESS.md`를 `## Phase N: [완료/진행중] - [요약]` 형식으로 업데이트. 중단 시 다음 세션이 이어받는 핵심 문서.
 
 ## 기술 제약
-- **로컬 실행 전용**: 외부 서비스(클라우드 DB, API 키 필요 서비스) 사용 금지
-- **네이티브 도구만**: Read, Write, Edit, Bash, Glob, Grep, Agent만 사용 가능
-- **서브에이전트 활용**: 독립적인 파일 작성은 Agent 도구로 병렬 처리 가능
+- **로컬 실행 전용** — 클라우드 DB/유료 API 키 서비스 금지
+- **도구**: Read, Write, Edit, Bash, Glob, Grep, Agent, WebSearch, WebFetch
+  - `WebSearch`/`WebFetch`는 **Phase 1 리서치 전용**
+- **Agent 도구**로 독립 파일 작성 병렬 처리 가능
 
 ## 사용자 요구사항
 {task}

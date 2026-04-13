@@ -33,7 +33,7 @@ from src.utils.logging import get_logger
 
 _logger = get_logger(agent_id="dev_runner")
 
-_DEV_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent"]
+_DEV_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent", "WebSearch", "WebFetch"]
 _REPORT_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
 
 MAX_SESSIONS = 10
@@ -133,13 +133,19 @@ async def generate_clarify_questions(
     last_error = None
     for attempt in range(2):
         try:
+            # 인스턴트 모드 CEO.generate_all_questions와 동일 프로파일 사용:
+            # effort="medium" + planning_timeout + ceo_max_turns
+            # effort 명시 안 하면 Claude CLI가 extended thinking 기본값으로
+            # 120s timeout을 초과한다 — 명시 필수
             result: DevClarifyQuestions = await bridge.structured_query(
                 system_prompt=system,
                 user_message=user,
                 output_schema=DevClarifyQuestions,
                 model=settings.worker_model,
                 allowed_tools=[],
-                timeout=120,
+                timeout=settings.planning_timeout,
+                max_turns=settings.ceo_max_turns,
+                effort=settings.ceo_question_effort,
             )
             lines = [f"{i+1}. {q}" for i, q in enumerate(result.questions)]
             return "\n".join(lines)

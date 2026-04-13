@@ -11,6 +11,9 @@ var UpgradeManager = (function () {
 
   var _ws = null;
   var _container = null;
+  var _tabSwitcher = null;
+  var _initialWrap = null;   // 최초개발 영구 컨테이너
+  var _upgradeWrap = null;   // 강화소 영구 컨테이너
   var _running = false;
 
   // 서브탭 상태
@@ -30,46 +33,72 @@ var UpgradeManager = (function () {
   var _devSessionId = '';
   var _devQuestions = '';
   var _devPaused = false;
+  var _initialWsPanel = null;  // WorkspacePanel (파일 참고용)
 
   function _clear(el) {
     while (el && el.firstChild) el.removeChild(el.firstChild);
   }
 
   function mountInShell(container) {
-    _container = container;
-    _render();
-  }
+    // 이미 마운트됐으면 기존 구조 재사용 (상태 보존)
+    if (_container === container && _initialWrap && _upgradeWrap) {
+      _switchSubMode(_subMode);
+      return;
+    }
 
-  function _render() {
-    if (!_container) return;
-    // 실행 중인 화면 보존 (탭 왕복 시 리셋 방지)
-    if (_running && _subMode === 'initial' && document.getElementById('dev-progress')) return;
-    if (_running && _subMode === 'upgrade' && _state === 'developing' && document.getElementById('upgrade-progress')) return;
+    _container = container;
     _clear(_container);
 
-    // 서브탭 스위처
-    var tabSwitcher = document.createElement('div');
-    tabSwitcher.className = 'ot-tab-switcher';
+    // 서브탭 스위처 (영구)
+    _tabSwitcher = document.createElement('div');
+    _tabSwitcher.className = 'ot-tab-switcher';
 
     var initialBtn = document.createElement('button');
     initialBtn.textContent = '최초개발';
-    initialBtn.className = 'ot-tab-btn' + (_subMode === 'initial' ? ' active' : '');
-    initialBtn.onclick = function () { _subMode = 'initial'; _render(); };
-    tabSwitcher.appendChild(initialBtn);
+    initialBtn.className = 'ot-tab-btn';
+    initialBtn.onclick = function () { _switchSubMode('initial'); };
+    _tabSwitcher.appendChild(initialBtn);
 
     var upgradeBtn = document.createElement('button');
     upgradeBtn.textContent = '강화소';
-    upgradeBtn.className = 'ot-tab-btn' + (_subMode === 'upgrade' ? ' active' : '');
-    upgradeBtn.onclick = function () { _subMode = 'upgrade'; _render(); };
-    tabSwitcher.appendChild(upgradeBtn);
+    upgradeBtn.className = 'ot-tab-btn';
+    upgradeBtn.onclick = function () { _switchSubMode('upgrade'); };
+    _tabSwitcher.appendChild(upgradeBtn);
 
-    _container.appendChild(tabSwitcher);
+    _container.appendChild(_tabSwitcher);
 
-    if (_subMode === 'initial') {
-      _renderInitialForm();
-    } else {
-      _renderUpgradeForm();
+    // 두 서브탭 영구 wrap
+    _initialWrap = document.createElement('div');
+    _initialWrap.className = 'au-subtab-wrap';
+    _container.appendChild(_initialWrap);
+
+    _upgradeWrap = document.createElement('div');
+    _upgradeWrap.className = 'au-subtab-wrap';
+    _container.appendChild(_upgradeWrap);
+
+    // 초기 폼 렌더 (각 wrap에 한 번씩)
+    _renderInitialForm();
+    _renderUpgradeForm();
+
+    _switchSubMode(_subMode);
+  }
+
+  function _switchSubMode(mode) {
+    _subMode = mode;
+    if (_initialWrap) _initialWrap.style.display = (mode === 'initial') ? '' : 'none';
+    if (_upgradeWrap) _upgradeWrap.style.display = (mode === 'upgrade') ? '' : 'none';
+    if (_tabSwitcher) {
+      var btns = _tabSwitcher.querySelectorAll('.ot-tab-btn');
+      for (var i = 0; i < btns.length; i++) {
+        var btnMode = (i === 0) ? 'initial' : 'upgrade';
+        btns[i].classList.toggle('active', btnMode === mode);
+      }
     }
+  }
+
+  // 레거시 _render 호출 대응 (내부 흐름에서 'form으로 돌아가기' 등)
+  function _render() {
+    _switchSubMode(_subMode);
   }
 
   // ──────────────────────────────────────────────
@@ -156,12 +185,13 @@ var UpgradeManager = (function () {
     };
     form.appendChild(startBtn);
 
-    _container.appendChild(form);
+    _clear(_upgradeWrap);
+    _upgradeWrap.appendChild(form);
 
     var progress = document.createElement('div');
     progress.id = 'upgrade-analyze-panel';
     progress.style.display = 'none';
-    _container.appendChild(progress);
+    _upgradeWrap.appendChild(progress);
   }
 
   function _startAnalyze() {
@@ -169,7 +199,7 @@ var UpgradeManager = (function () {
     _running = true;
     _connect();
 
-    var startBtn = _container.querySelector('.ot-start-btn');
+    var startBtn = _upgradeWrap.querySelector('.ot-start-btn');
     if (startBtn) { startBtn.disabled = true; startBtn.textContent = '분석 중...'; }
 
     var panel = document.getElementById('upgrade-analyze-panel');
@@ -259,10 +289,10 @@ var UpgradeManager = (function () {
       alert('오류: ' + (data.message || '알 수 없는 오류'));
       if (_subMode === 'initial') {
         _devPaused = false;
-        _render();
+        _renderInitialForm();
       } else {
         _state = 'form';
-        _render();
+        _renderUpgradeForm();
       }
     }
   }
@@ -364,7 +394,7 @@ var UpgradeManager = (function () {
 
   function _showAnalysisAndQuestions() {
     _state = 'questions';
-    _clear(_container);
+    _clear(_upgradeWrap);
 
     var panel = document.createElement('div');
     panel.className = 'ot-form';
@@ -460,15 +490,15 @@ var UpgradeManager = (function () {
     skipBtn.onclick = function () { _startDev(''); };
     panel.appendChild(skipBtn);
 
-    _container.appendChild(panel);
+    _upgradeWrap.appendChild(panel);
   }
 
   function _startDev(answers) {
     _state = 'developing';
     _running = true;
 
-    _clear(_container);
-    _renderDevProgress();
+    _clear(_upgradeWrap);
+    _renderUpgradeProgress();
 
     var retries = 0;
     var send = function () {
@@ -492,7 +522,7 @@ var UpgradeManager = (function () {
     send();
   }
 
-  function _renderDevProgress() {
+  function _renderUpgradeProgress() {
     _lastToolLabel = '';
     var wrap = document.createElement('div');
     wrap.id = 'upgrade-progress';
@@ -548,7 +578,7 @@ var UpgradeManager = (function () {
     logArea.style.cssText = 'margin-top:16px;max-height:400px;overflow-y:auto;';
     wrap.appendChild(logArea);
 
-    _container.appendChild(wrap);
+    _upgradeWrap.appendChild(wrap);
   }
 
   function _addLog(text, type) {
@@ -628,7 +658,8 @@ var UpgradeManager = (function () {
       _sessionId = '';
       _backupPath = '';
       _analysis = null;
-      _render();
+      _running = false;
+      _renderUpgradeForm();  // 강화소 wrap만 초기화
     };
     homeWrap.appendChild(homeBtn);
     logArea.appendChild(homeWrap);
@@ -664,6 +695,14 @@ var UpgradeManager = (function () {
     taskInput.rows = 5;
     form.appendChild(taskInput);
 
+    // WorkspacePanel — 참고할 파일 선택 (야근팀 dev와 동일 패턴)
+    var wsSection = document.createElement('div');
+    wsSection.className = 'ot-field';
+    if (typeof WorkspacePanel !== 'undefined' && WorkspacePanel.create) {
+      _initialWsPanel = WorkspacePanel.create(wsSection, 'overtime');
+    }
+    form.appendChild(wsSection);
+
     var startBtn = document.createElement('button');
     startBtn.className = 'ot-start-btn';
     startBtn.textContent = '개발 시작';
@@ -690,28 +729,15 @@ var UpgradeManager = (function () {
     };
     form.appendChild(startBtn);
 
-    _container.appendChild(form);
+    _clear(_initialWrap);
+    _initialWrap.appendChild(form);
   }
 
   function _showDevQuestions(questions, sessionId) {
     _devSessionId = sessionId;
     _devQuestions = questions;
 
-    _clear(_container);
-
-    // 서브탭 스위처 다시 렌더 (clear 후 복구)
-    var tabSwitcher = document.createElement('div');
-    tabSwitcher.className = 'ot-tab-switcher';
-    var initialBtn = document.createElement('button');
-    initialBtn.textContent = '최초개발';
-    initialBtn.className = 'ot-tab-btn active';
-    tabSwitcher.appendChild(initialBtn);
-    var upgradeBtn = document.createElement('button');
-    upgradeBtn.textContent = '강화소';
-    upgradeBtn.className = 'ot-tab-btn';
-    upgradeBtn.onclick = function () { _subMode = 'upgrade'; _render(); };
-    tabSwitcher.appendChild(upgradeBtn);
-    _container.appendChild(tabSwitcher);
+    _clear(_initialWrap);
 
     var panel = document.createElement('div');
     panel.className = 'ot-form';
@@ -750,7 +776,7 @@ var UpgradeManager = (function () {
     startBtn.className = 'ot-start-btn';
     startBtn.textContent = '개발 시작';
     startBtn.onclick = function () {
-      _startDev(_devTask, ansInput.value.trim(), _devSessionId);
+      _startInitialDev(_devTask, ansInput.value.trim(), _devSessionId);
     };
     panel.appendChild(startBtn);
 
@@ -758,16 +784,18 @@ var UpgradeManager = (function () {
     skipBtn.className = 'ot-skip-btn';
     skipBtn.style.cssText = 'margin-top:8px;background:none;border:1px solid var(--border,rgba(255,255,255,0.08));color:var(--dim,#8b949e);padding:8px 16px;border-radius:8px;cursor:pointer;width:100%;font-size:14px;';
     skipBtn.textContent = '건너뛰고 바로 개발 시작';
-    skipBtn.onclick = function () { _startDev(_devTask, '', _devSessionId); };
+    skipBtn.onclick = function () { _startInitialDev(_devTask, '', _devSessionId); };
     panel.appendChild(skipBtn);
 
-    _container.appendChild(panel);
+    _initialWrap.appendChild(panel);
   }
 
-  function _startDev(task, answers, sessionId) {
+  function _startInitialDev(task, answers, sessionId) {
     _running = true;
-    _clear(_container);
-    _renderDevProgress();
+    var wsFiles = _initialWsPanel ? _initialWsPanel.getSelectedFiles() : [];
+
+    _clear(_initialWrap);
+    _renderInitialDevProgress();
 
     var retries = 0;
     var sendStart = function () {
@@ -778,6 +806,7 @@ var UpgradeManager = (function () {
             task: task,
             answers: answers,
             session_id: sessionId,
+            workspace_files: wsFiles,
           },
         }));
       } else if (retries < 50) {
@@ -788,22 +817,8 @@ var UpgradeManager = (function () {
     sendStart();
   }
 
-  function _renderDevProgress() {
+  function _renderInitialDevProgress() {
     _lastToolLabel = '';
-
-    // 서브탭 스위처 (유지)
-    var tabSwitcher = document.createElement('div');
-    tabSwitcher.className = 'ot-tab-switcher';
-    var initialBtn = document.createElement('button');
-    initialBtn.textContent = '최초개발';
-    initialBtn.className = 'ot-tab-btn active';
-    tabSwitcher.appendChild(initialBtn);
-    var upgradeBtn = document.createElement('button');
-    upgradeBtn.textContent = '강화소';
-    upgradeBtn.className = 'ot-tab-btn';
-    upgradeBtn.onclick = function () { _subMode = 'upgrade'; _render(); };
-    tabSwitcher.appendChild(upgradeBtn);
-    _container.appendChild(tabSwitcher);
 
     var wrap = document.createElement('div');
     wrap.id = 'dev-progress';
@@ -852,7 +867,7 @@ var UpgradeManager = (function () {
     logArea.style.cssText = 'margin-top:16px;max-height:400px;overflow-y:auto;';
     wrap.appendChild(logArea);
 
-    _container.appendChild(wrap);
+    _initialWrap.appendChild(wrap);
   }
 
   function _handleDevProgress(data) {
@@ -970,7 +985,8 @@ var UpgradeManager = (function () {
     homeBtn.onclick = function () {
       _devTask = '';
       _devSessionId = '';
-      _render();
+      _devPaused = false;
+      _renderInitialForm();
     };
     homeWrap.appendChild(homeBtn);
     logArea.appendChild(homeWrap);

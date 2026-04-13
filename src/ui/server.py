@@ -1019,6 +1019,8 @@ async def upgrade_endpoint(ws: WebSocket):
         await ws.close(code=4001)
         return
 
+    user_id = user["sub"] if user else ""
+
     import asyncio
     import uuid
     from src.modes.common import get_mode_event_queue
@@ -1188,7 +1190,11 @@ async def upgrade_endpoint(ws: WebSocket):
                 dev_task = data.get("task", "")
                 dev_answers = data.get("answers", "")
                 dev_session_id = data.get("session_id", str(uuid.uuid4())[:8])
+                workspace_files = data.get("workspace_files", [])
                 _session_id = dev_session_id
+
+                from src.utils.workspace import read_files_as_context
+                file_ctx = read_files_as_context("overtime", workspace_files) if workspace_files else ""
 
                 await ws.send_json({"type": "dev_started", "data": {"session_id": _session_id}})
 
@@ -1202,7 +1208,7 @@ async def upgrade_endpoint(ws: WebSocket):
                         session_id=_session_id,
                         user_id=user_id,
                         overtime_id="",
-                        file_context="",
+                        file_context=file_ctx,
                     )
                 )
                 try:

@@ -89,47 +89,37 @@ _UPGRADE_DEV_SYSTEM = """\
 ## 사용자 추가 답변
 {answers}
 
-## 업그레이드 절차 (반드시 이 순서)
+## 업그레이드 절차 (Phase 1 → Phase 5 순서)
 
 ### Phase 1: 영향 범위 분석
-- 지시사항과 관련된 파일을 Grep/Glob으로 찾아 모두 읽기
-- 수정해야 할 정확한 파일/함수/라인 파악
-- `PROGRESS_UPGRADE.md`에 분석 결과 + 작업 계획 저장
-  형식:
-  ```
-  ## Phase 1: 분석 - 완료
-  대상 파일: [목록]
-  변경 계획: [항목별]
-  ```
+지시사항과 관련된 파일을 Grep/Glob으로 모두 읽기. 수정할 파일/함수/라인 특정. `PROGRESS_UPGRADE.md`에 `## Phase 1: 분석 - 완료` + 대상 파일 목록 + 변경 계획 기록.
 
-### Phase 2: 코드 수정
-- Phase 1 계획에 따라 Edit/Write로 파일 수정
-- **기존 코드 스타일 존중**: 들여쓰기, 네이밍 컨벤션, 파일 구조
-- 새 의존성이 필요하면 프로젝트의 기존 패키지 매니저 사용
-- 각 수정 후 문법 체크 (언어별):
-  - Python: `python3 -c "import ast; ast.parse(open('파일').read())"`
-  - JS/TS: `node -c 파일` 또는 `npx tsc --noEmit 파일`
-  - JSON: `python3 -m json.tool 파일`
-- 수정사항을 PROGRESS_UPGRADE.md에 항목별 기록
+### Phase 2: 사전 리서치 (선택적)
+Phase 1에서 다음이 발견되면 리서치 후 Phase 3로:
+- 사용 라이브러리의 최근 API 변경/deprecation 이력 가능성
+- 도메인 지식 필요한 신규 기능 (새 인증, 정규식, 암호화 등)
+- 사용자가 신규 라이브러리 도입 명시
 
-### Phase 3: 실행 및 회귀 검증
-- **기존 실행 방법대로 앱 실행**: {app_entry_points}
-- 지시사항이 제대로 반영됐는지 확인
-- **기존 기능이 깨지지 않았는지 회귀 테스트**
-- 오류 발생 시 Phase 2로 돌아가 수정 (통과할 때까지 반복)
-- 테스트 통과 후 서버/프로세스 종료
+아니면 스킵하고 Phase 3으로.
 
-### Phase 4: 완료 기록
-- PROGRESS_UPGRADE.md 마지막 줄에 반드시 추가:
-  `ALL_PHASES_DONE`
-- 이 마커는 자동화 시스템의 완료 감지용입니다. 빼먹으면 안 됩니다.
+**규칙**: `WebSearch` 최대 3회. **기존 스택과 호환되는 자료만** (라이브러리 교체 유도 금지, 클라우드 서비스 신규 도입 금지). 찾은 내용을 `PROGRESS_UPGRADE.md`의 `## Phase 2: 리서치 - 완료` 섹션에 출처 URL과 함께 기록.
 
-## 안전 규칙 — 절대 금지
-- `rm -rf .`, `rm -rf *`, `git reset --hard` 같은 파괴적 명령 금지
-- `.git` 폴더 수정 금지
-- 기존 설정 파일(.env, config.json 등)을 임의로 삭제 금지 — 수정만 허용
-- 백업 폴더({backup_path}) 건드리지 말 것
-- 사용자 홈 디렉토리 바깥(예: /usr, /System)에 접근 금지
+### Phase 3: 코드 수정
+Phase 1 계획에 따라 Edit/Write로 파일 수정. **기존 코드 스타일 존중** (들여쓰기, 네이밍, 구조). 새 의존성은 기존 패키지 매니저 사용. 각 수정 후 언어별 문법 체크 (Python: ast.parse, JS: node -c, JSON: json.tool). 수정사항을 PROGRESS_UPGRADE.md에 기록.
+
+### Phase 4: 실행 및 회귀 검증
+`{app_entry_points}` 대로 앱 실행. 지시사항 반영 확인 + **기존 기능 회귀 테스트**. 오류 있으면 Phase 3으로 돌아가 수정. 통과 시 테스트 프로세스 종료.
+
+### Phase 5: 완료 기록
+PROGRESS_UPGRADE.md 마지막 줄에 반드시 추가:
+`ALL_PHASES_DONE`
+
+## 안전 규칙 (절대 금지)
+- `rm -rf`, `git reset --hard` 같은 파괴적 명령
+- `.git` 폴더 수정
+- `.env`, `config.json` 삭제 (수정만 허용)
+- 백업 폴더({backup_path}) 건드리기
+- 시스템 경로(`/usr`, `/System` 등) 접근
 
 {handoff_section}
 """

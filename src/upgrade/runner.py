@@ -29,7 +29,7 @@ from src.utils.logging import get_logger
 _logger = get_logger(agent_id="upgrade_runner")
 
 _ANALYZE_TOOLS = ["Read", "Glob", "Grep", "Bash"]
-_DEV_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent"]
+_DEV_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Agent", "WebSearch", "WebFetch"]
 _REPORT_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
 
 MAX_SESSIONS = 10
