@@ -45,11 +45,11 @@ class CardChatPanel {
     this.inputEl = document.createElement('input');
     this.inputEl.className = 'cc-input';
     this.inputEl.placeholder = '\uba54\uc2dc\uc9c0 \uc785\ub825...'; // 메시지 입력...
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'cc-send';
-    sendBtn.textContent = '\uc804\uc1a1'; // 전송
+    this.sendBtn = document.createElement('button');
+    this.sendBtn.className = 'cc-send';
+    this.sendBtn.textContent = '\uc804\uc1a1'; // 전송
     inputWrap.appendChild(this.inputEl);
-    inputWrap.appendChild(sendBtn);
+    inputWrap.appendChild(this.sendBtn);
 
     this.el.appendChild(header);
     this.el.appendChild(this.messagesEl);
@@ -58,7 +58,7 @@ class CardChatPanel {
     // --- event listeners ---
     closeBtn.addEventListener('click', () => this.toggle(false));
 
-    sendBtn.addEventListener('click', () => this._handleSend());
+    this.sendBtn.addEventListener('click', () => this._handleSend());
 
     this.inputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.isComposing) {
@@ -174,6 +174,44 @@ class CardChatPanel {
    */
   setInputPlaceholder(text) {
     if (this.inputEl) this.inputEl.placeholder = text;
+  }
+
+  /**
+   * Enable or disable the chat input and send button.
+   * @param {boolean} disabled
+   */
+  setInputDisabled(disabled) {
+    if (this.inputEl) {
+      this.inputEl.disabled = disabled;
+      this.inputEl.style.opacity = disabled ? '0.5' : '';
+      this.inputEl.style.cursor = disabled ? 'not-allowed' : '';
+    }
+    if (this.sendBtn) {
+      this.sendBtn.disabled = disabled;
+      this.sendBtn.style.opacity = disabled ? '0.5' : '';
+      this.sendBtn.style.cursor = disabled ? 'not-allowed' : '';
+    }
+  }
+
+  /**
+   * Hide all action button groups (e.g., "이 방식 저장하기", "방식 수정 요청").
+   * Used to prevent conflicts during pipeline execution.
+   */
+  hideActionButtons() {
+    if (!this.messagesEl) return;
+    this.messagesEl.querySelectorAll('.cc-action-btns').forEach(el => {
+      el.style.display = 'none';
+    });
+  }
+
+  /**
+   * Re-show action button groups after execution ends.
+   */
+  showActionButtons() {
+    if (!this.messagesEl) return;
+    this.messagesEl.querySelectorAll('.cc-action-btns').forEach(el => {
+      el.style.display = '';
+    });
   }
 
   /**

@@ -494,6 +494,22 @@ var CardView = (function () {
     }
   }
 
+  /* ── 실행 UI lock/unlock ── */
+  function _lockChatUI() {
+    if (_chatPanel) {
+      _chatPanel.setInputDisabled(true);
+      _chatPanel.hideActionButtons();
+      _chatPanel.setInputPlaceholder('작업 진행 중... (완료 후 입력 가능)');
+    }
+  }
+
+  function _unlockChatUI() {
+    if (_chatPanel) {
+      _chatPanel.setInputDisabled(false);
+      _chatPanel.showActionButtons();
+    }
+  }
+
   function _handleChatMessage(text) {
     if (_activeMode === 'instant') {
       if (!_running) {
@@ -502,6 +518,7 @@ var CardView = (function () {
         _runningMode = _activeMode;
         CardEventHandler.reset();
         document.getElementById('card-stop-btn').style.display = '';
+        _lockChatUI();
         _connectWS();
         // Wait for WS to open, then send (max 5s timeout)
         var retries = 0;
@@ -520,6 +537,7 @@ var CardView = (function () {
           } else {
             _running = false;
             document.getElementById('card-stop-btn').style.display = 'none';
+            _unlockChatUI();
             if (_chatPanel) {
               _chatPanel.addMessage('❌ 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 잠시 후 다시 시도해 주세요.', 'system');
             }
@@ -534,16 +552,15 @@ var CardView = (function () {
           _chatPanel.addMessage('🔄 답변을 확인했습니다. 정보를 수집하고 보고서를 작성 중입니다...', 'system');
           _chatPanel.setInputPlaceholder('작업 진행 중...');
           _chatPanel.showThinking();
+          _chatPanel.setInputDisabled(true);
         }
       }
     } else if (_activeMode === 'builder') {
       if (_running) {
-        // 실행 중 → interrupt response
-        _sendWS({ type: 'interrupt_response', data: text });
+        // 실행 중에는 입력이 lock되어 있어 이 분기에 도달하지 않아야 함.
+        // 혹시 도달하면 무시하고 안내.
         if (_chatPanel) {
-          _chatPanel.addMessage('🔄 답변을 확인했습니다. 정보를 수집하고 보고서를 작성 중입니다...', 'system');
-          _chatPanel.setInputPlaceholder('작업 진행 중...');
-          _chatPanel.showThinking();
+          _chatPanel.addMessage('⚠️ 작업이 진행 중입니다. 완료 후 다시 시도하거나, 중지 버튼을 눌러주세요.', 'system');
         }
         return;
       }
@@ -594,10 +611,10 @@ var CardView = (function () {
     _runningMode = 'builder';
     CardEventHandler.reset();
     document.getElementById('card-stop-btn').style.display = '';
+    _lockChatUI();
     if (_chatPanel) {
       _chatPanel.addMessage('🚀 "' + (strategy.name || '방식') + '" 프레임워크로 분석을 시작합니다...', 'system');
       _chatPanel.showThinking();
-      _chatPanel.setInputPlaceholder('작업 진행 중...');
     }
     _connectWS();
     var retries = 0;
@@ -613,6 +630,7 @@ var CardView = (function () {
         _running = false;
         _runningMode = null;
         document.getElementById('card-stop-btn').style.display = 'none';
+        _unlockChatUI();
         if (_chatPanel) _chatPanel.addMessage('❌ 서버 연결 실패', 'system');
       }
     };
@@ -624,6 +642,7 @@ var CardView = (function () {
     _runningMode = 'builder';
     CardEventHandler.reset();
     document.getElementById('card-stop-btn').style.display = '';
+    _lockChatUI();
     _connectWS();
     var retries = 0;
     var sendStart = function () {
@@ -636,6 +655,7 @@ var CardView = (function () {
         _running = false;
         _runningMode = null;
         document.getElementById('card-stop-btn').style.display = 'none';
+        _unlockChatUI();
         if (_chatPanel) _chatPanel.addMessage('❌ 서버 연결 실패', 'system');
       }
     };
@@ -727,6 +747,7 @@ var CardView = (function () {
       stop();
       document.getElementById('card-stop-btn').style.display = 'none';
       document.getElementById('card-step-bar').style.display = 'none';
+      _unlockChatUI();
       if (_chatPanel) _chatPanel.addMessage('⏹️ 실행이 중지되었습니다.', 'system');
     });
 
@@ -738,7 +759,9 @@ var CardView = (function () {
         }
       },
       onInterrupt: function (data) {
+        // 명확화 질문 응답을 받아야 하므로 입력을 다시 활성화
         if (_chatPanel) {
+          _chatPanel.setInputDisabled(false);
           var q = (data && data.questions) || (data && data.content) || '질문이 있습니다. 응답해 주세요.';
           if (Array.isArray(q)) q = q.join('\n\n');
           _chatPanel.addMessage(q + '\n\n아래에 답변을 입력해주세요.', 'system', { interrupt: true, markdown: true });
@@ -751,6 +774,7 @@ var CardView = (function () {
         if (_chatPanel) _chatPanel.hideThinking();
         document.getElementById('card-stop-btn').style.display = 'none';
         document.getElementById('card-step-bar').style.display = 'none';
+        _unlockChatUI();
         if (data && data.report_path && _chatPanel) {
           _chatPanel.addReportLink(data.report_path, data.local_path || '');
         }
@@ -772,6 +796,7 @@ var CardView = (function () {
         _runningMode = null;
         document.getElementById('card-stop-btn').style.display = 'none';
         document.getElementById('card-step-bar').style.display = 'none';
+        _unlockChatUI();
       },
       onHierarchy: function () {
         if (_chatPanel) {
