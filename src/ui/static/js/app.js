@@ -446,7 +446,35 @@ const Auth = {
 
 /* Capability ticker + advisory comments removed — landing page no longer exists */
 
+/* ══ Theme Controller ══
+   Initial theme is set by inline script in <head> (avoids flash).
+   Default on first visit is 'light'; toggle persists to localStorage. */
+const ThemeController = {
+  KEY: 'ai-company-theme',
+
+  init() {
+    // Sync color-scheme for browser UA widgets (scrollbars, form controls)
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    document.documentElement.style.colorScheme = current;
+
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.addEventListener('click', () => this.toggle());
+  },
+
+  apply(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = theme;
+  },
+
+  toggle() {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    this.apply(next);
+    try { localStorage.setItem(this.KEY, next); } catch {}
+  }
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
+  ThemeController.init();
   const authed = await Auth.init();
   if (authed) {
     const mm = new ModeManager();

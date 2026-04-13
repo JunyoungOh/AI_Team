@@ -1,9 +1,9 @@
 .ws-panel {
-  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border: 1px solid var(--border, var(--cv-glass-hi));
   border-radius: 8px;
   padding: 8px 12px;
   margin-bottom: 8px;
-  background: var(--surface, #161B22);
+  background: var(--surface, var(--cv-surface));
 }
 .ws-panel-header {
   display: flex;
@@ -14,20 +14,20 @@
 .ws-panel-title {
   font-size: 13px;
   font-weight: 500;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
 }
 .ws-open-btn {
   font-size: 12px;
   padding: 2px 8px;
-  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border: 1px solid var(--border, var(--cv-glass-hi));
   border-radius: 4px;
   background: none;
   cursor: pointer;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
 }
 .ws-open-btn:hover {
-  background: rgba(255,255,255,0.06);
-  color: var(--text, #E6EDF3);
+  background: var(--cv-glass-hi);
+  color: var(--text, var(--cv-text));
 }
 .ws-file-list {
   display: flex;
@@ -43,24 +43,24 @@
   border-radius: 10px;
   font-size: 12px;
   cursor: pointer;
-  background: rgba(255,255,255,0.06);
-  color: var(--dim, #8b949e);
+  background: var(--cv-glass-hi);
+  color: var(--dim, var(--cv-dim));
   border: 1px solid transparent;
   transition: all 0.15s;
 }
 .ws-file-chip:hover {
-  background: rgba(255,255,255,0.1);
-  color: var(--text, #E6EDF3);
+  background: var(--cv-border-hi);
+  color: var(--text, var(--cv-text));
 }
 .ws-file-chip.selected {
   background: rgba(96,165,250,0.15);
-  border-color: var(--blue, #60a5fa);
-  color: var(--blue, #60a5fa);
+  border-color: var(--blue, var(--blue));
+  color: var(--blue, var(--blue));
   font-weight: 500;
 }
 .ws-empty {
   font-size: 12px;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
   padding: 4px 0;
 }
 .ws-refresh-btn {
@@ -69,10 +69,10 @@
   border: none;
   background: none;
   cursor: pointer;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
 }
 .ws-refresh-btn:hover {
-  color: var(--text, #E6EDF3);
+  color: var(--text, var(--cv-text));
 }
 
 /* 야근팀 모드 탭 */
@@ -80,62 +80,62 @@
   display: flex; gap: 0; margin-bottom: 16px;
 }
 .ot-tab-btn {
-  flex: 1; padding: 8px 16px; border: 1px solid var(--border, rgba(255,255,255,0.08));
-  background: none; color: var(--dim, #8b949e); cursor: pointer;
+  flex: 1; padding: 8px 16px; border: 1px solid var(--border, var(--cv-glass-hi));
+  background: none; color: var(--dim, var(--cv-dim)); cursor: pointer;
   font-size: 14px; font-weight: 500; transition: all 0.15s;
 }
 .ot-tab-btn:first-child { border-radius: 8px 0 0 8px; }
 .ot-tab-btn:last-child { border-radius: 0 8px 8px 0; }
 .ot-tab-btn.active {
-  background: rgba(96,165,250,0.15); color: var(--blue, #60a5fa);
-  border-color: var(--blue, #60a5fa);
+  background: rgba(96,165,250,0.15); color: var(--blue, var(--blue));
+  border-color: var(--blue, var(--blue));
 }
-.ot-tab-btn:hover:not(.active) { background: rgba(255,255,255,0.04); }
+.ot-tab-btn:hover:not(.active) { background: var(--cv-glass); }
 
 /* 개발 진행 단계 바 */
 .dev-phase-bar {
   display: flex; align-items: center;
   padding: 12px 16px;
-  background: var(--surface, #161B22); border-radius: 8px;
-  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  background: var(--surface, var(--cv-surface)); border-radius: 8px;
+  border: 1px solid var(--border, var(--cv-glass-hi));
   margin-bottom: 16px;
 }
 .dev-phase-item {
-  font-size: 13px; color: var(--dim, #8b949e);
+  font-size: 13px; color: var(--dim, var(--cv-dim));
   white-space: nowrap;
 }
-.dev-phase-item.active { color: var(--blue, #60a5fa); font-weight: 600; }
-.dev-phase-item.done { color: var(--green, #22c55e); }
+.dev-phase-item.active { color: var(--blue, var(--blue)); font-weight: 600; }
+.dev-phase-item.done { color: var(--green, var(--green)); }
 .dev-phase-connector {
   flex: 1; height: 1px;
-  background: var(--border, rgba(255,255,255,0.08)); margin: 0 12px;
+  background: var(--border, var(--cv-glass-hi)); margin: 0 12px;
 }
-.dev-phase-connector.done { background: var(--green, #22c55e); }
+.dev-phase-connector.done { background: var(--green, var(--green)); }
 
 /* 개발 앱 설명 textarea */
 .dev-task-input {
   width: 100%; min-height: 120px; padding: 12px;
-  background: var(--surface, #161B22); border: 1px solid var(--border, rgba(255,255,255,0.08));
-  border-radius: 8px; color: var(--text, #E6EDF3); font-size: 14px;
+  background: var(--surface, var(--cv-surface)); border: 1px solid var(--border, var(--cv-glass-hi));
+  border-radius: 8px; color: var(--text, var(--cv-text)); font-size: 14px;
   resize: vertical; font-family: inherit; margin-bottom: 12px;
 }
-.dev-task-input::placeholder { color: var(--dim, #8b949e); }
+.dev-task-input::placeholder { color: var(--dim, var(--cv-dim)); }
 .dev-task-input:focus {
-  outline: none; border-color: var(--blue, #60a5fa);
+  outline: none; border-color: var(--blue, var(--blue));
   box-shadow: 0 0 0 2px rgba(96,165,250,0.15);
 }
 
 .ot-label {
   display: block; font-size: 13px; font-weight: 500;
-  color: var(--dim, #8b949e); margin-bottom: 6px; margin-top: 12px;
+  color: var(--dim, var(--cv-dim)); margin-bottom: 6px; margin-top: 12px;
 }
 
 /* 개발 모드 질문 영역 — 마크다운 렌더링 */
 .dev-questions-text {
-  font-size: 14px; color: var(--text, #E6EDF3); line-height: 1.8;
+  font-size: 14px; color: var(--text, var(--cv-text)); line-height: 1.8;
   margin-bottom: 16px; padding: 16px;
-  background: var(--surface, #161B22); border-radius: 8px;
-  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  background: var(--surface, var(--cv-surface)); border-radius: 8px;
+  border: 1px solid var(--border, var(--cv-glass-hi));
 }
 .dev-questions-text ol, .dev-questions-text ul {
   padding-left: 20px; margin: 8px 0;
@@ -144,10 +144,10 @@
   margin-bottom: 10px; line-height: 1.6;
 }
 .dev-questions-text strong {
-  color: var(--blue, #60a5fa);
+  color: var(--blue, var(--blue));
 }
 .dev-questions-text code {
-  background: rgba(255,255,255,0.08); padding: 1px 5px;
+  background: var(--cv-glass-hi); padding: 1px 5px;
   border-radius: 3px; font-size: 0.9em;
 }
 .dev-questions-text p {
@@ -157,8 +157,8 @@
 /* 개발 모드 스탑 버튼 */
 .dev-stop-btn {
   display: block; margin: 12px 0; padding: 8px 20px;
-  background: none; border: 1px solid var(--red, #E94560);
-  border-radius: 8px; color: var(--red, #E94560);
+  background: none; border: 1px solid var(--red, var(--red));
+  border-radius: 8px; color: var(--red, var(--red));
   cursor: pointer; font-size: 13px; font-weight: 600;
   transition: all 0.15s;
 }

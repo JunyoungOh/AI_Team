@@ -10,19 +10,19 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
 }
 .usage-bar-label {
   font-weight: 600;
   font-size: 10px;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
   min-width: 18px;
 }
 .usage-bar-track {
   position: relative;
   width: 80px;
   height: 6px;
-  background: rgba(255,255,255,0.06);
+  background: var(--cv-glass-hi);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -33,13 +33,13 @@
   transition: width 0.6s ease, background 0.3s;
 }
 .usage-bar-fill.level-ok {
-  background: var(--blue, #60a5fa);
+  background: var(--blue, var(--blue));
 }
 .usage-bar-fill.level-warn {
-  background: var(--yellow, #FFB74D);
+  background: var(--yellow, var(--yellow));
 }
 .usage-bar-fill.level-danger {
-  background: var(--red, #E94560);
+  background: var(--red, var(--red));
 }
 .usage-bar-pct {
   font-size: 11px;
@@ -47,16 +47,16 @@
   min-width: 28px;
   text-align: right;
 }
-.usage-bar-pct.level-ok { color: var(--blue, #60a5fa); }
-.usage-bar-pct.level-warn { color: var(--yellow, #FFB74D); }
-.usage-bar-pct.level-danger { color: var(--red, #E94560); }
+.usage-bar-pct.level-ok { color: var(--blue, var(--blue)); }
+.usage-bar-pct.level-warn { color: var(--yellow, var(--yellow)); }
+.usage-bar-pct.level-danger { color: var(--red, var(--red)); }
 .usage-bar-reset {
   font-size: 9px;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
   opacity: 0.7;
 }
 .usage-bar-unavailable {
   font-size: 10px;
-  color: var(--dim, #8b949e);
+  color: var(--dim, var(--cv-dim));
   opacity: 0.5;
 }

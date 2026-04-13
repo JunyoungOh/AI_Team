@@ -3,8 +3,8 @@
 #dandelion-app {
   display: flex; flex-direction: column;
   height: 100vh; overflow: hidden;
-  background: #0D1117;
-  color: #E6EDF3;
+  background: var(--cv-bg);
+  color: var(--cv-text);
 }
 #dandelion-app.app-hidden { display: none !important; }
 
@@ -20,57 +20,57 @@
 .dandelion-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; height: 48px;
-  background: rgba(13, 17, 23, 0.95);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--bg-rgb),0.95);
+  border-bottom: 1px solid var(--cv-glass-hi);
 }
 .dandelion-header h1 {
-  font-size: 0.85em; color: var(--cv-dim, #8b949e); margin: 0;
+  font-size: 0.85em; color: var(--cv-dim, var(--cv-dim)); margin: 0;
   font-family: 'Outfit', sans-serif; font-weight: 500;
 }
 .dandelion-header-right { display: flex; align-items: center; gap: 10px; }
 .dandelion-status { font-size: 0.75em; font-weight: 600; }
 .dandelion-status-ready { color: #81C784; }
-.dandelion-status-running { color: #FFB74D; }
+.dandelion-status-running { color: var(--yellow); }
 
 .dandelion-home-btn {
   padding: 4px 12px; border-radius: 6px;
-  background: transparent; border: 1px solid rgba(255,255,255,0.15);
-  color: #8b949e; font-size: 0.65em; font-weight: 600;
+  background: transparent; border: 1px solid var(--cv-border-hi);
+  color: var(--cv-dim); font-size: 0.65em; font-weight: 600;
   cursor: pointer; font-family: inherit;
   transition: all 0.15s;
 }
-.dandelion-home-btn:hover { border-color: rgba(255,255,255,0.3); color: #E6EDF3; }
+.dandelion-home-btn:hover { border-color: rgba(255,255,255,0.3); color: var(--cv-text); }
 
 .dandelion-export-btn {
   padding: 4px 14px; border-radius: 6px;
   background: rgba(96, 165, 250, 0.12); border: 1px solid rgba(96, 165, 250, 0.35);
-  color: var(--cv-accent, #60a5fa); font-size: 0.65em; font-weight: 600;
+  color: var(--cv-accent, var(--blue)); font-size: 0.65em; font-weight: 600;
   cursor: pointer; font-family: inherit;
   transition: all 0.15s;
   animation: fadeIn 0.3s ease-out;
 }
-.dandelion-export-btn:hover { background: rgba(96, 165, 250, 0.2); border-color: var(--cv-accent, #60a5fa); }
+.dandelion-export-btn:hover { background: rgba(96, 165, 250, 0.2); border-color: var(--cv-accent, var(--blue)); }
 .dandelion-export-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Input area ── */
 .dandelion-input-area {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 20px;
-  background: rgba(22, 27, 34, 0.8);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--surface-rgb),0.8);
+  border-bottom: 1px solid var(--cv-glass-hi);
 }
 .dandelion-input {
   flex: 1; padding: 10px 14px;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px; color: #E6EDF3;
+  background: var(--cv-glass); border: 1px solid var(--cv-border-hi);
+  border-radius: 8px; color: var(--cv-text);
   font-size: 0.9em; font-family: inherit; outline: none;
   transition: border-color 0.2s;
 }
 .dandelion-input:focus { border-color: rgba(96, 165, 250, 0.5); }
-.dandelion-input::placeholder { color: #484f58; }
+.dandelion-input::placeholder { color: var(--cv-muted); }
 .dandelion-send-btn {
   padding: 10px 20px; border-radius: 8px;
-  background: var(--cv-accent, #60a5fa); border: none; color: white;
+  background: var(--cv-accent, var(--blue)); border: none; color: white;
   font-weight: 600; font-size: 0.85em; cursor: pointer;
   font-family: inherit; transition: all 0.15s;
 }
@@ -89,8 +89,8 @@
 .dandelion-progress-area {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 20px;
-  background: rgba(22, 27, 34, 0.8);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--surface-rgb),0.8);
+  border-bottom: 1px solid var(--cv-glass-hi);
 }
 .dandelion-steps {
   flex: 1; display: flex; align-items: center; gap: 0;
@@ -114,23 +114,23 @@
   width: 22px; height: 22px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 0.7em; font-weight: 700;
-  background: rgba(255,255,255,0.08);
-  color: #8b949e;
+  background: var(--cv-glass-hi);
+  color: var(--cv-dim);
   transition: all 0.3s;
 }
 .dandelion-step.active .dandelion-step-num {
-  background: var(--cv-accent, #60a5fa); color: white;
+  background: var(--cv-accent, var(--blue)); color: white;
 }
 .dandelion-step.done .dandelion-step-num {
   background: #81C784; color: white;
 }
 .dandelion-step-name {
-  font-size: 0.78em; color: #8b949e; white-space: nowrap;
+  font-size: 0.78em; color: var(--cv-dim); white-space: nowrap;
 }
-.dandelion-step.active .dandelion-step-name { color: #E6EDF3; }
+.dandelion-step.active .dandelion-step-name { color: var(--cv-text); }
 .dandelion-step.done .dandelion-step-name { color: #81C784; }
 .dandelion-step-detail {
-  font-size: 0.68em; color: var(--cv-accent, #60a5fa); font-weight: 600;
+  font-size: 0.68em; color: var(--cv-accent, var(--blue)); font-weight: 600;
   min-width: 28px;
 }
 .dandelion-step.done .dandelion-step-detail { color: #81C784; }
@@ -142,7 +142,7 @@
   50% { opacity: 0.4; }
 }
 .dandelion-step-arrow {
-  color: rgba(255,255,255,0.15); font-size: 0.8em;
+  color: var(--cv-border-hi); font-size: 0.8em;
   margin: 0 4px;
 }
 .dandelion-stop-btn {
@@ -167,11 +167,11 @@
 }
 .dandelion-clarify.show { display: block; }
 .dandelion-clarify-header {
-  font-size: 1em; font-weight: 600; color: #E6EDF3;
+  font-size: 1em; font-weight: 600; color: var(--cv-text);
   margin-bottom: 6px;
 }
 .dandelion-clarify-sub {
-  font-size: 0.78em; color: #8b949e;
+  font-size: 0.78em; color: var(--cv-dim);
   margin-bottom: 20px;
 }
 .dandelion-clarify-questions {
@@ -182,13 +182,13 @@
   display: flex; flex-direction: column; gap: 6px;
 }
 .dandelion-clarify-label {
-  font-size: 0.85em; color: #c9d1d9; line-height: 1.5;
+  font-size: 0.85em; color: var(--cv-text); line-height: 1.5;
 }
 .dandelion-clarify-input {
   padding: 8px 12px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 6px; color: #E6EDF3;
+  background: var(--cv-glass);
+  border: 1px solid var(--cv-border-hi);
+  border-radius: 6px; color: var(--cv-text);
   font-size: 0.82em; font-family: inherit;
   outline: none; resize: vertical;
   transition: border-color 0.2s;
@@ -196,25 +196,25 @@
 .dandelion-clarify-input:focus {
   border-color: rgba(96, 165, 250, 0.5);
 }
-.dandelion-clarify-input::placeholder { color: #484f58; }
+.dandelion-clarify-input::placeholder { color: var(--cv-muted); }
 .dandelion-clarify-actions {
   display: flex; gap: 10px; margin-top: 20px;
 }
 .dandelion-clarify-submit {
   padding: 10px 24px; border-radius: 8px;
-  background: var(--cv-accent, #60a5fa); border: none; color: white;
+  background: var(--cv-accent, var(--blue)); border: none; color: white;
   font-weight: 600; font-size: 0.85em; cursor: pointer;
   font-family: inherit; transition: all 0.15s;
 }
 .dandelion-clarify-submit:hover { background: #4d94f8; }
 .dandelion-clarify-skip {
   padding: 10px 24px; border-radius: 8px;
-  background: transparent; border: 1px solid rgba(255,255,255,0.15);
-  color: #8b949e; font-size: 0.85em; cursor: pointer;
+  background: transparent; border: 1px solid var(--cv-border-hi);
+  color: var(--cv-dim); font-size: 0.85em; cursor: pointer;
   font-family: inherit; transition: all 0.15s;
 }
 .dandelion-clarify-skip:hover {
-  border-color: rgba(255,255,255,0.3); color: #E6EDF3;
+  border-color: rgba(255,255,255,0.3); color: var(--cv-text);
 }
 
 /* ── Stems ── */
@@ -232,7 +232,7 @@
 
 /* ── Origin circle ── */
 .dandelion-origin {
-  fill: #E6EDF3; opacity: 0;
+  fill: var(--cv-text); opacity: 0;
   animation: fadeIn 0.3s ease-out forwards;
 }
 @keyframes fadeIn {
@@ -274,8 +274,8 @@
 .dandelion-tooltip {
   position: fixed; display: none;
   max-width: 280px; padding: 14px 16px;
-  background: rgba(22, 27, 34, 0.95);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--surface-rgb),0.95);
+  border: 1px solid var(--cv-glass-hi);
   border-radius: 10px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   backdrop-filter: blur(12px);
@@ -287,25 +287,25 @@
   font-size: 0.9em; font-weight: 600; margin-bottom: 6px;
 }
 .dandelion-tooltip-summary {
-  font-size: 0.78em; color: #8b949e; line-height: 1.5;
+  font-size: 0.78em; color: var(--cv-dim); line-height: 1.5;
   margin-bottom: 8px;
 }
 .dandelion-tooltip-more {
-  font-size: 0.7em; color: var(--cv-accent, #60a5fa); cursor: pointer;
+  font-size: 0.7em; color: var(--cv-accent, var(--blue)); cursor: pointer;
   border: none; background: none; font-family: inherit;
   padding: 0;
 }
 .dandelion-tooltip-more:hover { text-decoration: underline; }
 .dandelion-tooltip-weight {
-  font-size: 0.65em; color: #484f58; margin-top: 6px;
+  font-size: 0.65em; color: var(--cv-muted); margin-top: 6px;
 }
 
 /* ── Side panel (detail view) ── */
 .dandelion-panel {
   position: absolute; top: 0; right: -400px;
   width: 400px; height: 100%;
-  background: rgba(13, 17, 23, 0.98);
-  border-left: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--bg-rgb),0.98);
+  border-left: 1px solid var(--cv-glass-hi);
   padding: 24px; overflow-y: auto;
   transition: right 0.3s ease;
   z-index: 200;
@@ -313,25 +313,25 @@
 .dandelion-panel.open { right: 0; }
 .dandelion-panel-close {
   position: absolute; top: 12px; right: 12px;
-  background: none; border: none; color: #8b949e;
+  background: none; border: none; color: var(--cv-dim);
   font-size: 1.2em; cursor: pointer;
 }
-.dandelion-panel-close:hover { color: #E6EDF3; }
+.dandelion-panel-close:hover { color: var(--cv-text); }
 .dandelion-panel-title {
   font-size: 1.1em; font-weight: 600; margin-bottom: 16px;
   padding-right: 30px;
 }
 .dandelion-panel-detail {
-  font-size: 0.85em; line-height: 1.7; color: #c9d1d9;
+  font-size: 0.85em; line-height: 1.7; color: var(--cv-text);
   margin-bottom: 20px;
 }
 .dandelion-panel-detail h1, .dandelion-panel-detail h2, .dandelion-panel-detail h3 {
-  color: #E6EDF3; margin: 16px 0 8px;
+  color: var(--cv-text); margin: 16px 0 8px;
 }
 .dandelion-panel-meta {
-  font-size: 0.72em; color: #484f58;
+  font-size: 0.72em; color: var(--cv-muted);
   padding-top: 12px;
-  border-top: 1px solid rgba(255,255,255,0.04);
+  border-top: 1px solid var(--cv-glass);
 }
 
 /* ── Loading state ── */
@@ -339,16 +339,16 @@
   display: none;
   position: absolute; bottom: 20px; left: 50%;
   transform: translateX(-50%);
-  font-size: 0.8em; color: #8b949e;
-  background: rgba(22, 27, 34, 0.9);
+  font-size: 0.8em; color: var(--cv-dim);
+  background: rgba(var(--surface-rgb),0.9);
   padding: 8px 16px; border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--cv-glass-hi);
 }
 .dandelion-loading.show { display: block; }
 
 /* ── "현재" label ── */
 .dandelion-origin-label {
-  font-size: 11px; fill: #8b949e;
+  font-size: 11px; fill: var(--cv-dim);
   text-anchor: middle;
   opacity: 0;
   animation: fadeIn 0.3s ease-out 0.2s forwards;

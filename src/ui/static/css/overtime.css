@@ -8,19 +8,19 @@
 .ot-title {
   font-size: 1.4em;
   font-weight: 800;
-  color: var(--cv-text, #e6edf3);
+  color: var(--cv-text, var(--cv-text));
   margin-bottom: 6px;
 }
 .ot-subtitle {
   font-size: 0.82em;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
   margin-bottom: 28px;
 }
 .ot-label {
   display: block;
   font-size: 0.75em;
   font-weight: 600;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
   margin-bottom: 6px;
   margin-top: 16px;
 }
@@ -28,14 +28,14 @@
   width: 100%;
   padding: 10px 14px;
   border-radius: 8px;
-  border: 1px solid var(--cv-border, #30363d);
-  background: rgba(255,255,255,0.04);
-  color: var(--cv-text, #e6edf3);
+  border: 1px solid var(--cv-border, var(--cv-border-hi));
+  background: var(--cv-glass);
+  color: var(--cv-text, var(--cv-text));
   font-size: 0.85em;
 }
 .ot-input:focus, .ot-select:focus {
   outline: none;
-  border-color: var(--cv-accent, #60a5fa);
+  border-color: var(--cv-accent, var(--blue));
 }
 .ot-start-btn {
   width: 100%;
@@ -43,7 +43,7 @@
   padding: 12px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #0f3460, #16213e);
+  background: linear-gradient(135deg, var(--cv-surface), var(--cv-surface));
   color: #fff;
   font-size: 0.9em;
   font-weight: 700;
@@ -61,21 +61,21 @@
 .ot-progress-header {
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--cv-border, #30363d);
+  border-bottom: 1px solid var(--cv-border, var(--cv-border-hi));
 }
 .ot-progress-header h3 {
   font-size: 1.1em;
   font-weight: 800;
-  color: var(--cv-text, #e6edf3);
+  color: var(--cv-text, var(--cv-text));
   margin-bottom: 8px;
 }
 .ot-info {
   font-size: 0.82em;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
 }
 .ot-goal-text {
   font-size: 0.78em;
-  color: var(--cv-accent, #60a5fa);
+  color: var(--cv-accent, var(--blue));
   margin-top: 6px;
 }
 .ot-stop-btn {
@@ -99,14 +99,14 @@
   overflow-y: auto;
 }
 .ot-iter-card {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid var(--cv-border, #30363d);
+  background: var(--cv-glass);
+  border: 1px solid var(--cv-border, var(--cv-border-hi));
   border-radius: 10px;
   padding: 14px 18px;
   transition: border-color 0.2s;
 }
 .ot-iter-active {
-  border-color: var(--cv-accent, #60a5fa);
+  border-color: var(--cv-accent, var(--blue));
   background: rgba(96,165,250,0.05);
 }
 .ot-iter-header {
@@ -118,31 +118,31 @@
 .ot-iter-num {
   font-size: 0.8em;
   font-weight: 700;
-  color: var(--cv-text, #e6edf3);
+  color: var(--cv-text, var(--cv-text));
 }
 .ot-iter-score {
   font-size: 0.78em;
   font-weight: 700;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
 }
 .ot-score-pass { color: var(--cv-green, #4ade80); }
 .ot-score-fail { color: #f59e0b; }
 .ot-iter-body {
   font-size: 0.75em;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
 }
 .ot-iter-summary { margin-bottom: 4px; }
 .ot-iter-gaps { color: #f59e0b; font-size: 0.95em; }
 .ot-tool-counter {
   font-size: 0.9em;
-  color: var(--cv-accent, #60a5fa);
+  color: var(--cv-accent, var(--blue));
   margin-top: 4px;
 }
 
 /* ── Log Entries ── */
 .ot-log-entry {
   font-size: 0.78em;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
   padding: 8px 0;
 }
 .ot-report-link {
@@ -166,15 +166,15 @@
 }
 .ot-folder-btn {
   padding: 8px 16px;
-  border: 1px solid var(--cv-border, #30363d);
+  border: 1px solid var(--cv-border, var(--cv-border-hi));
   border-radius: 8px;
   background: transparent;
-  color: var(--cv-dim, #8b949e);
+  color: var(--cv-dim, var(--cv-dim));
   font-size: 0.8em;
   font-weight: 600;
   cursor: pointer;
 }
 .ot-folder-btn:hover {
-  border-color: var(--cv-accent, #60a5fa);
-  color: var(--cv-accent, #60a5fa);
+  border-color: var(--cv-accent, var(--blue));
+  color: var(--cv-accent, var(--blue));
 }
