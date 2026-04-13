@@ -277,7 +277,8 @@ var UpgradeManager = (function () {
       if (document.getElementById('dev-log')) {
         var label = data.label || data.tool || '';
         var count = data.count || 0;
-        _updateDevToolStatus(label, count);
+        var detail = data.detail || '';
+        _updateDevToolStatus(label, count, detail);
       }
     } else if (type === 'overtime_stopped') {
       _running = false;
@@ -355,18 +356,31 @@ var UpgradeManager = (function () {
     }
   }
 
+  function _formatToolLine(label, count, detail) {
+    // 기본: "🔧 검색 (3회)" — detail 있으면 "🔧 검색 — '생태계 동향' (3회)"
+    var text = '🔧 ' + label;
+    if (detail) text += ' — ' + detail;
+    text += ' (' + count + '회)';
+    return text;
+  }
+
   function _updateActivity(data) {
     var label = data.label || data.tool || '';
     var count = data.count || 0;
+    var detail = data.detail || '';
 
-    // 분석 단계: 간단한 한 줄 인디케이터 (기존 그대로)
+    // 분석 단계: 간단한 한 줄 인디케이터 (detail이 있으면 함께 표시)
     if (_state === 'analyzing' || _state === 'questions') {
       var el = document.getElementById('upgrade-activity');
-      if (el) el.textContent = '🔧 ' + label + ' × ' + count;
+      if (el) {
+        el.textContent = detail
+          ? '🔧 ' + label + ' — ' + detail + ' × ' + count
+          : '🔧 ' + label + ' × ' + count;
+      }
       return;
     }
 
-    // 개발 단계: 야근팀 dev 스타일 — 같은 도구 연속이면 마지막 줄 카운트만 갱신
+    // 개발 단계: 야근팀 dev 스타일 — 같은 도구 연속이면 마지막 줄 갱신
     if (_state !== 'developing') return;
     var logArea = document.getElementById('upgrade-log');
     if (!logArea) return;
@@ -374,7 +388,8 @@ var UpgradeManager = (function () {
     if (label === _lastToolLabel) {
       var lastEl = document.getElementById('upgrade-tool-last');
       if (lastEl) {
-        lastEl.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+        // 같은 도구라도 detail이 바뀌면 최신 detail로 갱신 (예: 다른 파일 읽기)
+        lastEl.textContent = _formatToolLine(label, count, detail);
         logArea.scrollTop = logArea.scrollHeight;
         return;
       }
@@ -386,7 +401,7 @@ var UpgradeManager = (function () {
     var newEl = document.createElement('div');
     newEl.id = 'upgrade-tool-last';
     newEl.style.cssText = 'padding:4px 0;font-size:12px;color:var(--blue,#60a5fa);border-bottom:1px solid var(--border,rgba(255,255,255,0.08));';
-    newEl.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+    newEl.textContent = _formatToolLine(label, count, detail);
     logArea.appendChild(newEl);
     logArea.scrollTop = logArea.scrollHeight;
     _lastToolLabel = label;
@@ -903,14 +918,15 @@ var UpgradeManager = (function () {
     }
   }
 
-  function _updateDevToolStatus(label, count) {
+  function _updateDevToolStatus(label, count, detail) {
     var logArea = document.getElementById('dev-log');
     if (!logArea) return;
+    detail = detail || '';
 
     if (label === _lastToolLabel) {
       var lastEl = document.getElementById('dev-tool-last');
       if (lastEl) {
-        lastEl.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+        lastEl.textContent = _formatToolLine(label, count, detail);
         logArea.scrollTop = logArea.scrollHeight;
         return;
       }
@@ -922,7 +938,7 @@ var UpgradeManager = (function () {
     var el = document.createElement('div');
     el.id = 'dev-tool-last';
     el.style.cssText = 'padding:4px 0;font-size:12px;color:var(--blue,#60a5fa);border-bottom:1px solid var(--border,rgba(255,255,255,0.08));';
-    el.textContent = '🔧 ' + label + ' (도구 사용 ' + count + '회)';
+    el.textContent = _formatToolLine(label, count, detail);
     logArea.appendChild(el);
     logArea.scrollTop = logArea.scrollHeight;
     _lastToolLabel = label;

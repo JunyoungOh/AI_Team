@@ -82,6 +82,41 @@ def _get_rate_limit_wait() -> tuple[int, bool]:
     return 300, True
 
 
+def _tool_detail(tool_name: str, inp: dict) -> str:
+    """도구 input에서 핵심 정보 한 줄 추출. 자동개발 탭 활동 카드에 표시.
+
+    너무 길면 잘라서 UI 한 줄에 맞게 반환. 빈 문자열이면 UI는 detail 없이
+    기존 "도구명 × 카운트" 형태로만 표시 (기존 동작 유지).
+    """
+    if not isinstance(inp, dict):
+        return ""
+
+    if tool_name == "WebSearch":
+        q = inp.get("query") or ""
+        return f"'{q[:60]}'" if q else ""
+    if tool_name == "WebFetch":
+        url = inp.get("url") or ""
+        return url if len(url) <= 60 else url[:57] + "..."
+    if tool_name in ("Read", "Write", "Edit"):
+        path = inp.get("file_path") or ""
+        if not path:
+            return ""
+        # 마지막 2 경로 요소만 (src/main.py, components/Button.tsx 등)
+        parts = path.rsplit("/", 2)
+        return "/".join(parts[-2:]) if len(parts) > 1 else path
+    if tool_name == "Bash":
+        cmd = inp.get("command") or ""
+        return cmd if len(cmd) <= 70 else cmd[:67] + "..."
+    if tool_name in ("Glob", "Grep"):
+        pattern = inp.get("pattern") or inp.get("query") or ""
+        return pattern if len(pattern) <= 60 else pattern[:57] + "..."
+    if tool_name == "Agent":
+        desc = inp.get("description") or inp.get("prompt") or ""
+        desc = str(desc)
+        return desc if len(desc) <= 80 else desc[:77] + "..."
+    return ""
+
+
 async def _run_cli_session(
     system_prompt: str,
     user_prompt: str,
@@ -137,6 +172,7 @@ async def _run_cli_session(
         "WebSearch": "검색", "WebFetch": "수집",
         "Agent": "에이전트", "Write": "저장",
         "Read": "읽기", "Bash": "실행",
+        "Edit": "편집", "Glob": "파일 검색", "Grep": "코드 검색",
     }
 
     try:
@@ -160,9 +196,15 @@ async def _run_cli_session(
                             tool_count += 1
                             tool_name = block.get("name", "")
                             label = _TOOL_LABELS.get(tool_name, tool_name)
+                            detail = _tool_detail(tool_name, block.get("input") or {})
                             emit_mode_event(session_id, {
                                 "type": activity_event_type,
-                                "data": {"tool": tool_name, "label": label, "count": tool_count},
+                                "data": {
+                                    "tool": tool_name,
+                                    "label": label,
+                                    "count": tool_count,
+                                    "detail": detail,
+                                },
                             })
 
                 elif event.get("type") == "result":
