@@ -43,14 +43,18 @@
   padding: 12px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--cv-surface), var(--cv-surface));
+  background: var(--cv-accent, #1E6FCC);
   color: #fff;
   font-size: 0.9em;
   font-weight: 700;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background 0.2s;
 }
-.ot-start-btn:hover { opacity: 0.85; }
+.ot-start-btn:hover:not(:disabled) { opacity: 0.85; }
+.ot-start-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 
 /* ── Progress ── */
 .ot-progress {
@@ -177,4 +181,164 @@
 .ot-folder-btn:hover {
   border-color: var(--cv-accent, var(--blue));
   color: var(--cv-accent, var(--blue));
+}
+
+/* ── 강화소 (Upgrade Station) ── */
+
+.upgrade-drag-over {
+  background: rgba(88, 166, 255, 0.08);
+  border-color: var(--cv-accent, var(--blue));
+}
+
+.upgrade-status {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--cv-surface, #161B22);
+  border: 1px solid var(--cv-border, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  color: var(--cv-text, #E6EDF3);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.upgrade-activity {
+  margin-top: 8px;
+  padding: 8px 12px;
+  color: var(--cv-dim, #8b949e);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.upgrade-summary-card {
+  padding: 20px;
+  background: var(--cv-surface, #161B22);
+  border: 1px solid var(--cv-border, rgba(255,255,255,0.08));
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.upgrade-summary-text {
+  color: var(--cv-text, #E6EDF3);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.upgrade-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.upgrade-chip {
+  padding: 4px 10px;
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--cv-accent, #58A6FF);
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.upgrade-backup-note {
+  padding: 8px 12px;
+  background: rgba(63, 185, 80, 0.08);
+  border-left: 3px solid var(--cv-green, #3FB950);
+  border-radius: 4px;
+  color: var(--cv-dim, #8b949e);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.upgrade-q-title {
+  color: var(--cv-text, #E6EDF3);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 24px 0 8px;
+}
+
+.upgrade-q-list {
+  padding-left: 20px;
+  margin: 0 0 16px;
+  color: var(--cv-text, #E6EDF3);
+}
+.upgrade-q-list li {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.upgrade-concern-title {
+  margin-top: 16px;
+  color: var(--cv-yellow, #D29922);
+  font-size: 13px;
+  font-weight: 600;
+}
+.upgrade-concern-list {
+  padding-left: 20px;
+  margin: 4px 0 16px;
+  color: var(--cv-dim, #8b949e);
+  font-size: 13px;
+}
+
+.upgrade-log {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--cv-surface, #161B22);
+  border: 1px solid var(--cv-border, rgba(255,255,255,0.08));
+  border-radius: 8px;
+}
+.upgrade-log-entry {
+  padding: 6px 0;
+  color: var(--cv-text, #E6EDF3);
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.upgrade-log-entry:last-child { border-bottom: none; }
+
+.upgrade-done-card {
+  margin-top: 24px;
+  padding: 24px;
+  background: var(--cv-surface, #161B22);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  border-radius: 12px;
+  text-align: center;
+}
+.upgrade-done-card h3 {
+  color: var(--cv-green, #3FB950);
+  font-size: 20px;
+  margin: 0 0 16px;
+}
+.upgrade-report-link {
+  display: inline-block;
+  margin: 8px 4px;
+  padding: 10px 18px;
+  background: var(--cv-accent, #58A6FF);
+  color: #fff;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.upgrade-folder-btn {
+  display: inline-block;
+  margin: 8px 4px;
+  padding: 10px 18px;
+  background: transparent;
+  color: var(--cv-text, #E6EDF3);
+  border: 1px solid var(--cv-border, rgba(255,255,255,0.15));
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.upgrade-backup-info {
+  margin-top: 12px;
+  color: var(--cv-dim, #8b949e);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
 }

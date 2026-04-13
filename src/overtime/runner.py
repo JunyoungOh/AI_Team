@@ -90,8 +90,14 @@ async def _run_cli_session(
     model: str = "sonnet",
     max_turns: int = 60,
     timeout: int = 420,
+    cwd: str | None = None,
+    activity_event_type: str = "overtime_activity",
 ) -> str:
-    """CLI subprocess를 실행하고 결과를 반환. rate limit 시 RateLimitError."""
+    """CLI subprocess를 실행하고 결과를 반환. rate limit 시 RateLimitError.
+
+    cwd: 기본 None(프로젝트 루트). 강화소처럼 사용자 폴더 안에서 실행해야 할 때 지정.
+    activity_event_type: 도구 사용 이벤트 WS 타입. 강화소는 "upgrade_activity" 전달.
+    """
     from src.utils.claude_code import (
         _register_process,
         _unregister_process,
@@ -117,7 +123,7 @@ async def _run_cli_session(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        cwd=os.getcwd(),
+        cwd=cwd or os.getcwd(),
         start_new_session=True,
         env=env,
     )
@@ -155,7 +161,7 @@ async def _run_cli_session(
                             tool_name = block.get("name", "")
                             label = _TOOL_LABELS.get(tool_name, tool_name)
                             emit_mode_event(session_id, {
-                                "type": "overtime_activity",
+                                "type": activity_event_type,
                                 "data": {"tool": tool_name, "label": label, "count": tool_count},
                             })
 

@@ -40,10 +40,10 @@ MAX_SESSIONS = 10
 _COMPLETION_MARKER = "ALL_PHASES_DONE"
 
 
-def _emit(session_id: str, phase: str, action: str, **kwargs):
-    """개발 모드 이벤트 emit 헬퍼."""
+def _emit(session_id: str, phase: str, action: str, *, event_type: str = "dev_progress", **kwargs):
+    """개발 모드 이벤트 emit 헬퍼. event_type은 강화소가 재사용할 수 있도록 파라미터화."""
     emit_mode_event(session_id, {
-        "type": "dev_progress",
+        "type": event_type,
         "data": {"phase": phase, "action": action, **kwargs},
     })
 
@@ -58,11 +58,16 @@ async def _run_with_rate_limit_retry(
     max_turns: int = 60,
     timeout: int = 420,
     max_non_rl_retries: int = 3,
+    cwd: str | None = None,
+    activity_event_type: str = "overtime_activity",
+    emit_event_type: str = "dev_progress",
 ) -> str:
     """CLI 세션 실행 + 사용량 파일 기반 rate limit 재시도.
 
     - rate limit: 사용량 파일에서 리셋 시점 읽어 대기 → 무한 재시도
     - 기타 오류: max_non_rl_retries까지만 재시도
+    - cwd: 강화소 등 외부 폴더 작업 시 사용
+    - emit_event_type: 재시도/rate-limit 알림을 어떤 WS 타입으로 보낼지
     """
     non_rl_attempts = 0
 
@@ -76,6 +81,8 @@ async def _run_with_rate_limit_retry(
                 model=model,
                 max_turns=max_turns,
                 timeout=timeout,
+                cwd=cwd,
+                activity_event_type=activity_event_type,
             )
         except RateLimitError as e:
             wait_sec, is_rl = _get_rate_limit_wait()
@@ -86,6 +93,7 @@ async def _run_with_rate_limit_retry(
                 if non_rl_attempts >= max_non_rl_retries:
                     raise
                 _emit(session_id, phase, "retry",
+                      event_type=emit_event_type,
                       message=f"일시 오류 — 재시도 ({non_rl_attempts}/{max_non_rl_retries})")
                 await asyncio.sleep(30)
                 continue
@@ -94,6 +102,7 @@ async def _run_with_rate_limit_retry(
             wait_min = wait_sec // 60
             _logger.warning("dev_rate_limited", phase=phase, wait_s=wait_sec)
             _emit(session_id, phase, "rate_limited",
+                  event_type=emit_event_type,
                   message=f"사용량 한도 도달 — {wait_min}분 후 자동 재개",
                   cooldown=wait_sec,
                   resume_at=int(time.time()) + wait_sec)

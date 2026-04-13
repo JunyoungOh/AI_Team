@@ -410,6 +410,11 @@ var CardView = (function () {
           OvertimeManager.mountInShell(container); _modeBooted[mode] = true;
         }
         break;
+      case 'upgrade':
+        if (typeof UpgradeManager !== 'undefined' && UpgradeManager.mountInShell) {
+          UpgradeManager.mountInShell(container); _modeBooted[mode] = true;
+        }
+        break;
       case 'skill':
         if (typeof SkillManager !== 'undefined' && SkillManager.mountInShell) {
           SkillManager.mountInShell(container); _modeBooted[mode] = true;

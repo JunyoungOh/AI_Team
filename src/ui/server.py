@@ -994,6 +994,255 @@ async def overtime_endpoint(ws: WebSocket):
         logging.getLogger(__name__).error("overtime_crash: %s", e, exc_info=True)
 
 
+# ── 강화소 (Upgrade Station) ─────────────────────────────
+
+@app.websocket("/ws/upgrade")
+async def upgrade_endpoint(ws: WebSocket):
+    """WebSocket endpoint for 강화소 (기존 앱 업그레이드).
+
+    Message protocol (client → server):
+      {type: "start_upgrade_analyze", data: {folder_path, task}}
+      {type: "start_upgrade_dev", data: {folder_path, task, answers, backup_path, analysis}}
+      {type: "stop_upgrade"}
+
+    Protocol (server → client):
+      {type: "upgrade_progress", data: {phase, action, message, ...}}
+      {type: "upgrade_activity", data: {tool, label, count}}
+      {type: "upgrade_analyze_result", data: {folder_path, backup_path, analysis}}
+      {type: "error", data: {message}}
+    """
+    await ws.accept()
+
+    user = _verify_ws_token(ws) if _membership_enabled() else None
+    if _membership_enabled() and not user:
+        await ws.send_json({"type": "error", "data": {"message": "인증이 필요합니다."}})
+        await ws.close(code=4001)
+        return
+
+    import asyncio
+    import uuid
+    from src.modes.common import get_mode_event_queue
+    from src.upgrade.runner import prepare_and_analyze, run_upgrade_dev
+
+    _upgrade_task: asyncio.Task | None = None
+    _session_id = ""
+
+    async def _drain_events():
+        try:
+            while True:
+                q = get_mode_event_queue(_session_id)
+                while not q.empty():
+                    ev = q.get_nowait()
+                    try:
+                        await ws.send_json(ev)
+                    except Exception:
+                        return
+                await asyncio.sleep(0.3)
+        except asyncio.CancelledError:
+            pass
+
+    try:
+        while True:
+            msg = await ws.receive_json()
+            msg_type = msg.get("type", "")
+
+            if msg_type == "start_upgrade_analyze":
+                data = msg.get("data", {})
+                folder_path = (data.get("folder_path") or "").strip()
+                task = (data.get("task") or "").strip()
+
+                if not folder_path or not task:
+                    await ws.send_json({"type": "error", "data": {
+                        "message": "폴더 경로와 지시사항이 모두 필요합니다."
+                    }})
+                    continue
+
+                _session_id = str(uuid.uuid4())[:8]
+                drain_task = asyncio.create_task(_drain_events())
+                try:
+                    result = await prepare_and_analyze(
+                        folder_path=folder_path,
+                        task=task,
+                        session_id=_session_id,
+                    )
+                    await ws.send_json({
+                        "type": "upgrade_analyze_result",
+                        "data": {
+                            "session_id": _session_id,
+                            "folder_path": result["folder_path"],
+                            "backup_path": result["backup_path"],
+                            "analysis": result["analysis"],
+                        },
+                    })
+                except ValueError as e:
+                    await ws.send_json({"type": "error", "data": {"message": str(e)}})
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error("upgrade_analyze_error: %s", e, exc_info=True)
+                    await ws.send_json({"type": "error", "data": {
+                        "message": f"분석 실패: {str(e)[:300]}"
+                    }})
+                finally:
+                    await asyncio.sleep(0.3)
+                    q = get_mode_event_queue(_session_id)
+                    while not q.empty():
+                        try:
+                            await ws.send_json(q.get_nowait())
+                        except Exception:
+                            break
+                    drain_task.cancel()
+                    try:
+                        await drain_task
+                    except asyncio.CancelledError:
+                        pass
+
+            elif msg_type == "start_upgrade_dev":
+                data = msg.get("data", {})
+                folder_path = (data.get("folder_path") or "").strip()
+                task = (data.get("task") or "").strip()
+                answers = data.get("answers", "") or ""
+                backup_path = (data.get("backup_path") or "").strip()
+                analysis = data.get("analysis") or {}
+                _session_id = data.get("session_id") or str(uuid.uuid4())[:8]
+
+                if not folder_path or not backup_path:
+                    await ws.send_json({"type": "error", "data": {
+                        "message": "분석 단계의 결과(folder_path, backup_path)가 필요합니다."
+                    }})
+                    continue
+
+                await ws.send_json({"type": "upgrade_dev_started", "data": {
+                    "session_id": _session_id,
+                }})
+
+                drain_task = asyncio.create_task(_drain_events())
+                _upgrade_task = asyncio.create_task(run_upgrade_dev(
+                    folder_path=folder_path,
+                    task=task,
+                    answers=answers,
+                    backup_path=backup_path,
+                    analysis=analysis,
+                    session_id=_session_id,
+                ))
+                try:
+                    await _upgrade_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error("upgrade_dev_error: %s", e, exc_info=True)
+                    try:
+                        await ws.send_json({"type": "error", "data": {
+                            "message": str(e)[:500]
+                        }})
+                    except Exception:
+                        pass
+                finally:
+                    await asyncio.sleep(0.5)
+                    q = get_mode_event_queue(_session_id)
+                    while not q.empty():
+                        try:
+                            await ws.send_json(q.get_nowait())
+                        except Exception:
+                            break
+                    drain_task.cancel()
+                    try:
+                        await drain_task
+                    except asyncio.CancelledError:
+                        pass
+
+            elif msg_type == "stop_upgrade":
+                if _upgrade_task and not _upgrade_task.done():
+                    _upgrade_task.cancel()
+                    await ws.send_json({"type": "upgrade_stopped", "data": {}})
+
+            # ── 최초개발 (0→1) — 자동개발 탭의 '최초개발' 서브탭 ──
+            elif msg_type == "start_dev_clarify":
+                data = msg.get("data", {})
+                dev_task = data.get("task", "")
+                _session_id = str(uuid.uuid4())[:8]
+
+                from src.overtime.dev_runner import generate_clarify_questions
+
+                drain_task = asyncio.create_task(_drain_events())
+                try:
+                    questions = await generate_clarify_questions(dev_task, _session_id)
+                    await ws.send_json({
+                        "type": "dev_clarify_questions",
+                        "data": {"questions": questions, "session_id": _session_id},
+                    })
+                except Exception as e:
+                    await ws.send_json({
+                        "type": "error",
+                        "data": {"message": f"질문 생성 실패: {e}"},
+                    })
+                finally:
+                    drain_task.cancel()
+                    try:
+                        await drain_task
+                    except asyncio.CancelledError:
+                        pass
+
+            elif msg_type == "start_dev":
+                data = msg.get("data", {})
+                dev_task = data.get("task", "")
+                dev_answers = data.get("answers", "")
+                dev_session_id = data.get("session_id", str(uuid.uuid4())[:8])
+                _session_id = dev_session_id
+
+                await ws.send_json({"type": "dev_started", "data": {"session_id": _session_id}})
+
+                from src.overtime.dev_runner import run_dev_overtime
+
+                drain_task = asyncio.create_task(_drain_events())
+                _upgrade_task = asyncio.create_task(
+                    run_dev_overtime(
+                        task=dev_task,
+                        answers=dev_answers,
+                        session_id=_session_id,
+                        user_id=user_id,
+                        overtime_id="",
+                        file_context="",
+                    )
+                )
+                try:
+                    await _upgrade_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error("dev_initial_error: %s", e, exc_info=True)
+                    try:
+                        await ws.send_json({"type": "error", "data": {"message": str(e)[:500]}})
+                    except Exception:
+                        pass
+                finally:
+                    await asyncio.sleep(0.5)
+                    q = get_mode_event_queue(_session_id)
+                    while not q.empty():
+                        try:
+                            await ws.send_json(q.get_nowait())
+                        except Exception:
+                            break
+                    drain_task.cancel()
+                    try:
+                        await drain_task
+                    except asyncio.CancelledError:
+                        pass
+
+            elif msg_type == "stop_dev":
+                if _upgrade_task and not _upgrade_task.done():
+                    _upgrade_task.cancel()
+                    await ws.send_json({"type": "overtime_stopped", "data": {}})
+
+    except WebSocketDisconnect:
+        if _upgrade_task and not _upgrade_task.done():
+            _upgrade_task.cancel()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("upgrade_crash: %s", e, exc_info=True)
+
+
 @app.get("/api/skill-builder/list")
 async def skill_builder_list():
     """스킬 목록 패널이 호출. data/skills/registry.json 내용을 반환."""
