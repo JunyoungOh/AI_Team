@@ -17,6 +17,7 @@ import re
 import shutil
 import signal
 import subprocess as _subprocess_mod
+import sys
 import threading
 import time as _time_mod
 from enum import Enum
@@ -1215,6 +1216,7 @@ class ClaudeCodeBridge:
             env=env,
             cwd=cwd,
             start_new_session=True,
+            limit=sys.maxsize,
         )
         _register_process(proc)
 
@@ -1330,6 +1332,7 @@ class ClaudeCodeBridge:
             env=env,
             cwd=cwd,
             start_new_session=True,
+            limit=sys.maxsize,
         )
         _register_process(proc)
         try:

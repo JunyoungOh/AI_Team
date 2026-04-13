@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -134,6 +135,7 @@ async def _stream_session(
         cwd=cwd,
         start_new_session=True,
         env=env,
+        limit=sys.maxsize,
     )
     _register_process(proc)
 
