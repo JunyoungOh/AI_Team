@@ -189,6 +189,19 @@ async def _startup_cleanup():
         await _scheduler_service.start()
         import logging
         logging.getLogger(__name__).info("scheduler_service_started")
+        # Register UI-saved schedules (JSON-per-user store) with APScheduler.
+        # Without this bridge, cron-based auto execution never fires for
+        # schedules created via the 스케줄팀 UI.
+        try:
+            from src.company_builder.scheduler import register_all_company_schedules
+            count = register_all_company_schedules(_scheduler_service)
+            logging.getLogger(__name__).info(
+                "company_schedules_registered: count=%d", count,
+            )
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "company_schedules_register_failed: %s", e,
+            )
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("scheduler_start_failed: %s", e)
@@ -590,7 +603,37 @@ async def company_builder_endpoint(ws: WebSocket):
                 from src.company_builder import schedule_storage as ss
                 sched_data = msg.get("data", {})
                 saved = ss.save_schedule(user_id, sched_data)
-                await ws.send_json({"type": "schedule_saved", "data": saved})
+                # Bridge to APScheduler so cron auto-execution actually fires.
+                # JSON save already succeeded — we report registration status
+                # separately so the user doesn't lose their work on bridge failure.
+                registered = False
+                register_error = ""
+                if _scheduler_service is None:
+                    register_error = "scheduler_service_unavailable"
+                else:
+                    try:
+                        from src.company_builder.scheduler import (
+                            register_single_schedule,
+                            unregister_schedule,
+                        )
+                        unregister_schedule(_scheduler_service, saved["id"])
+                        registered = register_single_schedule(
+                            _scheduler_service, user_id, saved["id"],
+                        )
+                        if not registered and saved.get("enabled", False):
+                            register_error = "registration_failed"
+                    except Exception as e:
+                        register_error = f"{type(e).__name__}: {str(e)[:120]}"
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "save_schedule bridge failed for %s: %s",
+                            saved.get("id"), e,
+                        )
+                response_data = dict(saved)
+                response_data["registered"] = registered
+                if register_error:
+                    response_data["register_error"] = register_error
+                await ws.send_json({"type": "schedule_saved", "data": response_data})
 
             elif msg_type == "list_schedules":
                 from src.company_builder import schedule_storage as ss
@@ -603,11 +646,37 @@ async def company_builder_endpoint(ws: WebSocket):
                 enabled = msg.get("data", {}).get("enabled", True)
                 result = ss.toggle_schedule(user_id, sid, enabled)
                 if result:
+                    # Bridge: enable → (re)register, disable → unregister
+                    if _scheduler_service is not None:
+                        try:
+                            from src.company_builder.scheduler import (
+                                register_single_schedule,
+                                unregister_schedule,
+                            )
+                            unregister_schedule(_scheduler_service, sid)
+                            if enabled:
+                                register_single_schedule(
+                                    _scheduler_service, user_id, sid,
+                                )
+                        except Exception as e:
+                            import logging
+                            logging.getLogger(__name__).warning(
+                                "toggle_schedule bridge failed for %s: %s", sid, e,
+                            )
                     await ws.send_json({"type": "schedule_toggled", "data": result})
 
             elif msg_type == "delete_schedule":
                 from src.company_builder import schedule_storage as ss
                 sid = msg.get("data", {}).get("schedule_id", "")
+                if _scheduler_service is not None:
+                    try:
+                        from src.company_builder.scheduler import unregister_schedule
+                        unregister_schedule(_scheduler_service, sid)
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "delete_schedule bridge failed for %s: %s", sid, e,
+                        )
                 ss.delete_schedule(user_id, sid)
                 await ws.send_json({"type": "schedule_deleted", "data": {"schedule_id": sid}})
 

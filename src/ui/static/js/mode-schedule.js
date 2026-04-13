@@ -45,7 +45,10 @@ var ScheduleTeamManager = (function () {
         } else if (msg.type === 'builder_strategies') {
           _strategies = (msg.data && msg.data.strategies) || [];
           _render();
-        } else if (msg.type === 'schedule_saved' || msg.type === 'schedule_deleted' || msg.type === 'schedule_toggled') {
+        } else if (msg.type === 'schedule_saved') {
+          _showSaveResult(msg.data || {});
+          _send({ type: 'list_schedules' });
+        } else if (msg.type === 'schedule_deleted' || msg.type === 'schedule_toggled') {
           _send({ type: 'list_schedules' });
         } else if (msg.type === 'schedule_detail_prompt') {
           _showDetailForm();
@@ -516,6 +519,25 @@ var ScheduleTeamManager = (function () {
 
   var _progressTimer = null;
   var _progressStart = 0;
+
+  function _showSaveResult(saved) {
+    // 저장 자체는 성공했더라도 APScheduler 등록이 실패했다면 사용자에게 알림.
+    // 이 경우 cron 시간이 되어도 자동 실행이 안 되므로 수동 "지금 실행"만 가능.
+    if (saved.enabled === false) return;  // 비활성 저장은 등록 안 되는 게 정상
+    if (saved.registered === false) {
+      var reason = saved.register_error || 'unknown';
+      var msg = '⚠️ 스케줄은 저장됐지만 자동 실행 등록에 실패했습니다.\n';
+      if (reason === 'scheduler_service_unavailable') {
+        msg += '스케줄러가 시작되지 않았습니다. 서버를 재시작해주세요.';
+      } else if (reason === 'registration_failed') {
+        msg += '크론 표현식이나 저장 파일을 확인해주세요.';
+      } else {
+        msg += '사유: ' + reason;
+      }
+      msg += '\n\n"지금 실행" 버튼은 정상 동작합니다.';
+      alert(msg);
+    }
+  }
 
   function _showRunProgress(scheduleId) {
     // 카드 내에 프로그레스 바 삽입

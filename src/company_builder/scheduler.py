@@ -42,6 +42,26 @@ def register_company_schedules(scheduler_service, user_id: str) -> int:
     return count
 
 
+def register_all_company_schedules(scheduler_service) -> int:
+    """Scan data/users/*/schedules/ and register every enabled schedule.
+
+    Used on server startup to recover UI-saved schedules that live outside
+    the SchedulerService's own SQLite store.
+    """
+    from pathlib import Path
+    users_dir = Path("data/users")
+    if not users_dir.exists():
+        return 0
+    total = 0
+    for user_dir in users_dir.iterdir():
+        if not user_dir.is_dir():
+            continue
+        if not (user_dir / "schedules").exists():
+            continue
+        total += register_company_schedules(scheduler_service, user_dir.name)
+    return total
+
+
 def register_single_schedule(scheduler_service, user_id: str, schedule_id: str) -> bool:
     """Register a single schedule by ID. Returns True if successful."""
     sched = schedule_storage.load_schedule(user_id, schedule_id)
