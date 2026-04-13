@@ -90,6 +90,34 @@ def read_files_as_context(
     return "\n\n## 사용자 첨부 파일\n\n" + "\n\n".join(parts)
 
 
+def resolve_selected_paths(
+    mode: str,
+    filenames: list[str],
+    base: Path | None = None,
+) -> list[str]:
+    """선택된 파일명 → `data/workspace/{mode}/input/{name}` 절대경로 문자열.
+
+    파일 내용을 읽지 않고 **경로만** 반환한다. CLI가 `Read` 도구로 직접
+    파일을 인지하도록 하는 방식 — 강화소(upgrade)의 cwd 기반 파일 인식과
+    같은 철학이다.
+
+    경로 순회 방지: input 폴더 직속 자식만 허용. 존재하지 않는 파일은
+    조용히 건너뛴다.
+    """
+    if not filenames:
+        return []
+    b = base or _DEFAULT_BASE
+    inp = (b / mode / "input").resolve()
+    out: list[str] = []
+    for name in filenames:
+        path = (inp / name).resolve()
+        if path.parent != inp:
+            continue
+        if path.exists() and path.is_file():
+            out.append(str(path))
+    return out
+
+
 def get_output_dir(mode: str, session_id: str, base: Path | None = None) -> Path:
     """세션별 output 디렉토리를 생성하고 반환."""
     b = base or _DEFAULT_BASE

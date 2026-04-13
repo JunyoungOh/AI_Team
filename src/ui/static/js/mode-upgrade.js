@@ -713,12 +713,16 @@ var UpgradeManager = (function () {
       startBtn.disabled = true;
       startBtn.textContent = '질문 생성 중...';
       _connect();
+      // 사용자가 선택한 파일명 목록을 clarify 단계부터 같이 전송한다.
+      // 서버는 data/workspace/overtime/input/{name} 절대경로로 변환해
+      // clarify LLM에게 "이 파일은 이미 선택됨"을 알려준다.
+      var wsFiles = _initialWsPanel ? _initialWsPanel.getSelectedFiles() : [];
       var retries = 0;
       var sendClarify = function () {
         if (_ws && _ws.readyState === WebSocket.OPEN) {
           _ws.send(JSON.stringify({
             type: 'start_dev_clarify',
-            data: { task: task },
+            data: { task: task, workspace_files: wsFiles },
           }));
         } else if (retries < 50) {
           retries++;

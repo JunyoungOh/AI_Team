@@ -908,13 +908,16 @@ async def overtime_endpoint(ws: WebSocket):
             elif msg_type == "start_dev_clarify":
                 data = msg.get("data", {})
                 dev_task = data.get("task", "")
+                workspace_files = data.get("workspace_files", [])
                 _session_id = str(uuid.uuid4())[:8]
 
                 from src.overtime.dev_runner import generate_clarify_questions
 
                 drain_task = asyncio.create_task(_drain_events())
                 try:
-                    questions = await generate_clarify_questions(dev_task, _session_id)
+                    questions = await generate_clarify_questions(
+                        dev_task, _session_id, workspace_files=workspace_files,
+                    )
                     await ws.send_json({
                         "type": "dev_clarify_questions",
                         "data": {"questions": questions, "session_id": _session_id},
@@ -934,9 +937,6 @@ async def overtime_endpoint(ws: WebSocket):
                 workspace_files = data.get("workspace_files", [])
                 dev_session_id = data.get("session_id", str(uuid.uuid4())[:8])
                 _session_id = dev_session_id
-
-                from src.utils.workspace import read_files_as_context
-                file_ctx = read_files_as_context("overtime", workspace_files) if workspace_files else ""
 
                 ot = storage.save_overtime(user_id, {
                     "name": f"[DEV] {dev_task[:40]}",
@@ -958,7 +958,7 @@ async def overtime_endpoint(ws: WebSocket):
                     run_dev_overtime(
                         task=dev_task, answers=dev_answers,
                         session_id=_session_id, user_id=user_id,
-                        overtime_id=ot_id, file_context=file_ctx,
+                        overtime_id=ot_id, workspace_files=workspace_files,
                     )
                 )
 
@@ -1162,13 +1162,16 @@ async def upgrade_endpoint(ws: WebSocket):
             elif msg_type == "start_dev_clarify":
                 data = msg.get("data", {})
                 dev_task = data.get("task", "")
+                workspace_files = data.get("workspace_files", [])
                 _session_id = str(uuid.uuid4())[:8]
 
                 from src.overtime.dev_runner import generate_clarify_questions
 
                 drain_task = asyncio.create_task(_drain_events())
                 try:
-                    questions = await generate_clarify_questions(dev_task, _session_id)
+                    questions = await generate_clarify_questions(
+                        dev_task, _session_id, workspace_files=workspace_files,
+                    )
                     await ws.send_json({
                         "type": "dev_clarify_questions",
                         "data": {"questions": questions, "session_id": _session_id},
@@ -1193,9 +1196,6 @@ async def upgrade_endpoint(ws: WebSocket):
                 workspace_files = data.get("workspace_files", [])
                 _session_id = dev_session_id
 
-                from src.utils.workspace import read_files_as_context
-                file_ctx = read_files_as_context("overtime", workspace_files) if workspace_files else ""
-
                 await ws.send_json({"type": "dev_started", "data": {"session_id": _session_id}})
 
                 from src.overtime.dev_runner import run_dev_overtime
@@ -1208,7 +1208,7 @@ async def upgrade_endpoint(ws: WebSocket):
                         session_id=_session_id,
                         user_id=user_id,
                         overtime_id="",
-                        file_context=file_ctx,
+                        workspace_files=workspace_files,
                     )
                 )
                 try:

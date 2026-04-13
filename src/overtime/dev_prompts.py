@@ -46,9 +46,29 @@ _CLARIFY_SYSTEM = """\
 """
 
 
-def build_clarify_prompt(task: str) -> tuple[str, str]:
-    """명확화 질문 생성용 (system, user) 반환."""
-    return _CLARIFY_SYSTEM, task
+def build_clarify_prompt(
+    task: str,
+    file_paths: list[str] | None = None,
+) -> tuple[str, str]:
+    """명확화 질문 생성용 (system, user) 반환.
+
+    file_paths가 있으면 user 메시지에 "선택된 파일 절대경로" 섹션을 붙여
+    clarify LLM이 파일 선택 자체를 되묻지 않고, 파일 성격에 맞는 질문만
+    생성하도록 유도한다.
+    """
+    if not file_paths:
+        return _CLARIFY_SYSTEM, task
+
+    file_lines = "\n".join(f"- {p}" for p in file_paths)
+    user = (
+        f"{task}\n\n"
+        f"## 사용자가 이미 선택한 참고 파일 (절대경로)\n"
+        f"{file_lines}\n\n"
+        f"위 파일은 **이미 선택되어 있습니다**. \"어떤 파일을 쓸 건가요\" 같은 "
+        f"파일 선택 자체를 묻는 질문은 절대 하지 마세요. 파일명과 확장자를 보고 "
+        f"어떤 종류의 데이터인지 추론해서, 앱 기획에 꼭 필요한 질문만 생성하세요."
+    )
+    return _CLARIFY_SYSTEM, user
 
 
 # ── 2. 개발 시스템 프롬프트 ──────────────────────────────
@@ -124,17 +144,37 @@ def build_dev_system_prompt(
     answers: str,
     work_dir: str,
     handoff_context: str = "",
+    file_paths: list[str] | None = None,
 ) -> str:
-    """개발 CLI 세션용 시스템 프롬프트 반환."""
+    """개발 CLI 세션용 시스템 프롬프트 반환.
+
+    file_paths가 있으면 task 뒤에 "참고 파일" 섹션을 덧붙인다. 개발 세션은
+    Read 도구를 쓸 수 있으므로 CLI가 직접 절대경로로 파일을 읽는다.
+    """
     handoff_section = ""
     if handoff_context:
         handoff_section = _HANDOFF_SECTION.format(
             work_dir=work_dir,
             handoff_context=handoff_context,
         )
+
+    effective_task = task
+    if file_paths:
+        file_lines = "\n".join(f"- `{p}`" for p in file_paths)
+        effective_task = (
+            f"{task}\n\n"
+            f"## 사용자가 제공한 참고 파일 (절대경로)\n"
+            f"{file_lines}\n\n"
+            f"위 파일들은 이 앱의 참고/입력 자료입니다. 반드시 **Phase 1 시작 전** "
+            f"에 `Read` 도구로 각 파일을 먼저 열어보고 내용/스키마/샘플 데이터를 "
+            f"파악한 뒤, 그 정보를 기반으로 PLAN.md를 수립하세요. 앱 런타임에 이 "
+            f"파일이 필요하면 `{work_dir}/` 내부로 복사해서 사용하고, PLAN.md에 "
+            f"그 방식을 명시하세요."
+        )
+
     return _DEV_SYSTEM.format(
         work_dir=work_dir,
-        task=task,
+        task=effective_task,
         answers=answers,
         handoff_section=handoff_section,
     )

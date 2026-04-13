@@ -112,17 +112,25 @@ async def _run_with_rate_limit_retry(
 async def generate_clarify_questions(
     task: str,
     session_id: str,
+    workspace_files: list[str] | None = None,
 ) -> str:
-    """명확화 질문 생성. bridge.structured_query + Pydantic 스키마로 구조화된 응답 강제."""
+    """명확화 질문 생성. bridge.structured_query + Pydantic 스키마로 구조화된 응답 강제.
+
+    workspace_files가 있으면 `data/workspace/overtime/input/` 기준 절대경로로
+    변환해서 prompt에 주입한다. 이렇게 하면 clarify LLM이 파일 선택 자체를
+    되묻지 않는다.
+    """
     from pydantic import BaseModel, Field
     from src.utils.bridge_factory import get_bridge
+    from src.utils.workspace import resolve_selected_paths
 
     class DevClarifyQuestions(BaseModel):
         """개발 모드 명확화 질문."""
         questions: list[str] = Field(min_length=1, max_length=5, description="3~5개 질문 목록")
 
     settings = get_settings()
-    system, user = build_clarify_prompt(task)
+    file_paths = resolve_selected_paths("overtime", workspace_files or [])
+    system, user = build_clarify_prompt(task, file_paths=file_paths)
 
     _emit(session_id, "clarify", "generating", message="명확화 질문 생성 중")
 
@@ -174,19 +182,23 @@ async def run_dev_overtime(
     session_id: str,
     user_id: str = "",
     overtime_id: str = "",
-    file_context: str = "",
+    workspace_files: list[str] | None = None,
 ) -> str:
-    """개발 모드 메인 실행. 완료 시 report_dir 반환."""
+    """개발 모드 메인 실행. 완료 시 report_dir 반환.
+
+    workspace_files에 파일명이 담겨 있으면 `data/workspace/overtime/input/`
+    기준 절대경로로 변환해서 dev system prompt에 주입한다. CLI는 Read 도구로
+    해당 경로의 파일을 직접 열어본다.
+    """
     from src.company_builder.storage import update_overtime_iteration
+    from src.utils.workspace import resolve_selected_paths
 
     settings = get_settings()
     work_dir = f"data/workspace/overtime/output/{session_id}/app"
     report_dir = f"data/reports/{session_id}"
     Path(work_dir).mkdir(parents=True, exist_ok=True)
 
-    effective_task = task
-    if file_context:
-        effective_task = task + "\n\n" + file_context
+    file_paths = resolve_selected_paths("overtime", workspace_files or [])
 
     handoff_context = ""
     dev_complete = False
@@ -196,10 +208,11 @@ async def run_dev_overtime(
         _logger.info("dev_session_start", session=session_num, session_id=session_id)
 
         system_prompt = build_dev_system_prompt(
-            task=effective_task,
+            task=task,
             answers=answers,
             work_dir=work_dir,
             handoff_context=handoff_context,
+            file_paths=file_paths,
         )
         user_prompt = (
             "위 지시에 따라 앱 개발을 시작하세요. "
@@ -271,7 +284,7 @@ async def run_dev_overtime(
           message="앱 설명 리포트 + 실행 가이드 생성 중")
 
     report_system, report_user = build_report_prompt(
-        task=effective_task, work_dir=work_dir, report_dir=report_dir,
+        task=task, work_dir=work_dir, report_dir=report_dir,
     )
 
     try:
@@ -301,7 +314,7 @@ async def run_dev_overtime(
             f"<title>개발 완료</title></head><body style='background:#0D1117;"
             f"color:#E6EDF3;padding:40px;font-family:sans-serif;'>"
             f"<h1>개발 완료</h1>"
-            f"<h2>요청</h2><p>{effective_task[:500]}</p>"
+            f"<h2>요청</h2><p>{task[:500]}</p>"
             f"<h2>생성된 파일</h2><pre>{file_list}</pre>"
             f"<h2>실행 방법</h2><p>터미널에서 앱 폴더로 이동 후 실행하세요.</p>"
             f"</body></html>",
