@@ -148,11 +148,29 @@ var UpgradeManager = (function () {
     folderInput.addEventListener('drop', function (e) {
       e.preventDefault();
       folderInput.classList.remove('upgrade-drag-over');
-      var files = e.dataTransfer && e.dataTransfer.files;
-      if (files && files.length > 0) {
-        var first = files[0];
-        var path = first.path || first.webkitRelativePath || first.name;
-        if (path) folderInput.value = path;
+      var dt = e.dataTransfer;
+      if (!dt) return;
+
+      // macOS Finder는 드래그 시 file:// URI를 text/uri-list 또는 text/plain에 같이 싣는다.
+      // 브라우저는 보안상 File.path를 노출하지 않으므로 이 URI를 파싱해야 절대경로를 얻을 수 있다.
+      var uri = '';
+      try { uri = dt.getData('text/uri-list') || ''; } catch (_) {}
+      if (!uri) {
+        try { uri = dt.getData('text/plain') || ''; } catch (_) {}
+      }
+      var firstLine = uri.split(/\r?\n/).find(function (l) { return l && l.indexOf('#') !== 0; }) || '';
+      if (firstLine.indexOf('file://') === 0) {
+        try {
+          var decoded = decodeURIComponent(firstLine.replace(/^file:\/\/(localhost)?/, ''));
+          if (decoded) { folderInput.value = decoded; return; }
+        } catch (_) {}
+      }
+
+      // Fallback: 일부 브라우저는 폴더 드롭 시 File 객체를 주지만 절대경로는 없다.
+      // 이 경우엔 사용자가 직접 입력하도록 안내한다.
+      var files = dt.files;
+      if (files && files.length > 0 && files[0].name) {
+        alert('드래그한 폴더의 절대경로를 자동으로 읽지 못했어요. Finder에서 다시 끌어 놓거나 경로를 직접 입력해 주세요.');
       }
     });
 
