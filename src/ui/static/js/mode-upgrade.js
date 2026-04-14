@@ -127,8 +127,11 @@ var UpgradeManager = (function () {
 
     var folderHint = document.createElement('div');
     folderHint.className = 'st-cron-help';
-    folderHint.textContent = '💡 Finder에서 폴더를 여기로 끌어 놓으면 경로가 자동으로 입력됩니다.';
+    folderHint.textContent = '💡 "폴더 선택" 버튼이 가장 확실합니다. 드래그앤드롭은 브라우저 보안상 폴더 이름만 들어올 수 있어서 보정이 필요할 수 있어요.';
     form.appendChild(folderHint);
+
+    var folderRow = document.createElement('div');
+    folderRow.style.cssText = 'display:flex;gap:8px;align-items:stretch;';
 
     var folderInput = document.createElement('input');
     folderInput.type = 'text';
@@ -136,7 +139,38 @@ var UpgradeManager = (function () {
     folderInput.id = 'upgrade-folder-path';
     folderInput.placeholder = '예: /Users/me/projects/my-todo-app';
     folderInput.value = _folderPath;
-    form.appendChild(folderInput);
+    folderInput.style.flex = '1';
+    folderRow.appendChild(folderInput);
+
+    var pickBtn = document.createElement('button');
+    pickBtn.type = 'button';
+    pickBtn.className = 'ot-pick-btn';
+    pickBtn.textContent = '📁 폴더 선택';
+    pickBtn.style.cssText = 'padding:0 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;white-space:nowrap;';
+    pickBtn.onclick = function () {
+      pickBtn.disabled = true;
+      var prevText = pickBtn.textContent;
+      pickBtn.textContent = '여는 중…';
+      fetch('/api/pick-folder', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data && data.ok && data.path) {
+            folderInput.value = data.path;
+          } else if (data && !data.cancelled && data.error) {
+            alert('폴더 선택 다이얼로그를 열 수 없어요: ' + data.error);
+          }
+        })
+        .catch(function (err) {
+          alert('폴더 선택 요청 실패: ' + (err && err.message ? err.message : err));
+        })
+        .finally(function () {
+          pickBtn.disabled = false;
+          pickBtn.textContent = prevText;
+        });
+    };
+    folderRow.appendChild(pickBtn);
+
+    form.appendChild(folderRow);
 
     folderInput.addEventListener('dragover', function (e) {
       e.preventDefault();
@@ -151,26 +185,42 @@ var UpgradeManager = (function () {
       var dt = e.dataTransfer;
       if (!dt) return;
 
-      // macOS Finder는 드래그 시 file:// URI를 text/uri-list 또는 text/plain에 같이 싣는다.
-      // 브라우저는 보안상 File.path를 노출하지 않으므로 이 URI를 파싱해야 절대경로를 얻을 수 있다.
-      var uri = '';
-      try { uri = dt.getData('text/uri-list') || ''; } catch (_) {}
-      if (!uri) {
-        try { uri = dt.getData('text/plain') || ''; } catch (_) {}
-      }
-      var firstLine = uri.split(/\r?\n/).find(function (l) { return l && l.indexOf('#') !== 0; }) || '';
-      if (firstLine.indexOf('file://') === 0) {
+      // 베스트에포트 1: 모든 dataTransfer 타입을 훑어보며 file:// URI를 찾는다.
+      // macOS Finder가 어떤 타입에 URI를 넣을지는 브라우저/버전에 따라 다르다.
+      var types = [];
+      try { types = Array.prototype.slice.call(dt.types || []); } catch (_) {}
+      var candidates = [];
+      types.forEach(function (t) {
         try {
-          var decoded = decodeURIComponent(firstLine.replace(/^file:\/\/(localhost)?/, ''));
-          if (decoded) { folderInput.value = decoded; return; }
+          var v = dt.getData(t);
+          if (v) candidates.push(v);
         } catch (_) {}
+      });
+      for (var i = 0; i < candidates.length; i++) {
+        var lines = candidates[i].split(/\r?\n/);
+        for (var j = 0; j < lines.length; j++) {
+          var line = lines[j];
+          if (!line || line.indexOf('#') === 0) continue;
+          if (line.indexOf('file://') === 0) {
+            try {
+              var decoded = decodeURIComponent(line.replace(/^file:\/\/(localhost)?/, ''));
+              if (decoded) { folderInput.value = decoded.replace(/\/$/, ''); return; }
+            } catch (_) {}
+          }
+          // 경로처럼 보이는 문자열도 받아준다 (사용자가 텍스트로 경로를 드래그한 경우).
+          if (line.charAt(0) === '/' || /^[A-Za-z]:\\/.test(line)) {
+            folderInput.value = line.replace(/\/$/, '');
+            return;
+          }
+        }
       }
 
-      // Fallback: 일부 브라우저는 폴더 드롭 시 File 객체를 주지만 절대경로는 없다.
-      // 이 경우엔 사용자가 직접 입력하도록 안내한다.
+      // Fallback: 절대경로를 못 얻으면 폴더 이름이라도 입력해서 사용자가 보정할 수 있게 한다.
+      // (브라우저 보안상 드래그된 폴더의 절대경로는 종종 노출되지 않는다 — 정확한 경로가 필요하면
+      // 옆의 "📁 폴더 선택" 버튼을 사용한다.)
       var files = dt.files;
       if (files && files.length > 0 && files[0].name) {
-        alert('드래그한 폴더의 절대경로를 자동으로 읽지 못했어요. Finder에서 다시 끌어 놓거나 경로를 직접 입력해 주세요.');
+        folderInput.value = files[0].name;
       }
     });
 

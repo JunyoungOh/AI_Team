@@ -1509,6 +1509,43 @@ async def preview_file(path: str):
     return FileResponse(resolved)
 
 
+@app.post("/api/pick-folder")
+async def pick_folder():
+    """Open a native folder picker dialog and return the absolute path.
+
+    Uses macOS osascript / Linux zenity. Browsers don't expose absolute paths
+    for dragged folders, so this is the reliable way to capture them.
+    """
+    import subprocess as _sp
+    import platform
+    try:
+        if platform.system() == "Darwin":
+            script = 'POSIX path of (choose folder with prompt "업그레이드 대상 폴더를 선택하세요")'
+            proc = _sp.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode != 0:
+                # User cancelled the dialog → returncode 1, stderr "User canceled."
+                return {"ok": False, "cancelled": True}
+            path = proc.stdout.strip().rstrip("/")
+            return {"ok": True, "path": path} if path else {"ok": False, "cancelled": True}
+        elif platform.system() == "Linux":
+            proc = _sp.run(
+                ["zenity", "--file-selection", "--directory"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode != 0:
+                return {"ok": False, "cancelled": True}
+            return {"ok": True, "path": proc.stdout.strip()}
+        else:
+            return {"ok": False, "error": "unsupported platform"}
+    except FileNotFoundError as e:
+        return {"ok": False, "error": f"picker tool missing: {e}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
 @app.post("/api/open-folder")
 async def open_folder(request: Request):
     """Open a local folder in Finder/Explorer."""
