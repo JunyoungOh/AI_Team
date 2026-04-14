@@ -18,6 +18,7 @@
   --cv-red:      #E94560;
   --cv-green:    #22c55e;
   --cv-blue:     #3b82f6;
+  --cv-sidebar-width: 136px;
 }
 
 /* ── 0b. Light theme overrides (warm cream) ── */
@@ -60,7 +61,7 @@ html[data-theme="light"] {
   position: fixed; inset: 0;
   display: grid;
   grid-template-rows: 48px 1fr;
-  grid-template-columns: minmax(52px, 52px) 1fr 0px;
+  grid-template-columns: var(--cv-sidebar-width) 1fr 0px;
   background: var(--cv-bg);
   color: var(--cv-text);
   font-family: 'Outfit', sans-serif;
@@ -68,11 +69,11 @@ html[data-theme="light"] {
 }
 #card-app.hidden { display: none !important; }
 #card-app.chat-open {
-  grid-template-columns: minmax(52px, 52px) 1fr 360px;
+  grid-template-columns: var(--cv-sidebar-width) 1fr 360px;
 }
 /* 인스턴트 모드: canvas 없이 chat이 전체 영역 차지 */
 #card-app.chat-fullwidth {
-  grid-template-columns: minmax(52px, 52px) 0px 1fr;
+  grid-template-columns: var(--cv-sidebar-width) 0px 1fr;
 }
 #card-app.chat-fullwidth #card-canvas { display: none; }
 #card-app.chat-fullwidth #card-chat {
@@ -202,20 +203,14 @@ html[data-theme="light"] #theme-toggle .theme-icon-moon { display: block; }
 
 /* ── 4. Sidebar ── */
 #card-sidebar {
+  grid-column: 1; grid-row: 2;
   display: flex; flex-direction: column; align-items: stretch;
-  gap: 2px; padding: 8px 6px;
+  gap: 2px; padding: 8px 8px;
   background: var(--cv-bg);
   border-right: 1px solid var(--cv-border);
-  overflow: hidden;
-  width: 52px;
-  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  position: absolute; top: 48px; left: 0; bottom: 0;
-  z-index: 20;
-}
-#card-sidebar:hover {
-  width: 180px;
   overflow-y: auto; overflow-x: hidden;
-  box-shadow: 4px 0 24px rgba(0,0,0,0.3);
+  width: 100%;
+  z-index: 20;
 }
 .cs-icon {
   width: 20px; height: 20px;
@@ -253,11 +248,9 @@ html[data-theme="light"] #theme-toggle .theme-icon-moon { display: block; }
 .cs-item .cs-label {
   font-size: 0.75em; font-weight: 500;
   color: var(--cv-dim);
-  opacity: 0; transition: opacity 0.2s;
   overflow: hidden;
   letter-spacing: 0.1px;
 }
-#card-sidebar:hover .cs-item .cs-label { opacity: 1; }
 .cs-item.active .cs-label { color: var(--cv-accent); font-weight: 600; }
 
 /* Sidebar separator */
@@ -282,11 +275,9 @@ html[data-theme="light"] #theme-toggle .theme-icon-moon { display: block; }
 }
 #card-sidebar .cs-brand-label {
   font-size: 0.65em; color: var(--cv-muted); font-weight: 500;
-  opacity: 0 !important; transition: opacity 0.2s;
   pointer-events: none; display: inline !important;
-  width: 0; overflow: hidden;
+  overflow: hidden;
 }
-#card-sidebar:hover .cs-brand-label { opacity: 1 !important; width: auto; }
 
 /* Sidebar team list */
 .cs-team-list {
@@ -309,10 +300,8 @@ html[data-theme="light"] #theme-toggle .theme-icon-moon { display: block; }
 }
 .cs-team-item .cs-team-name {
   font-size: 0.65em; font-weight: 500;
-  opacity: 0; transition: opacity 0.15s;
   overflow: hidden; text-overflow: ellipsis;
 }
-#card-sidebar:hover .cs-team-item .cs-team-name { opacity: 1; }
 .cs-team-sep {
   width: 24px; height: 1px;
   background: var(--cv-border);
@@ -322,10 +311,8 @@ html[data-theme="light"] #theme-toggle .theme-icon-moon { display: block; }
   font-size: 0.55em; font-weight: 600;
   color: var(--cv-muted); padding: 4px 12px;
   text-transform: uppercase; letter-spacing: 0.5px;
-  opacity: 0; transition: opacity 0.15s;
   white-space: nowrap;
 }
-#card-sidebar:hover .cs-team-header { opacity: 1; }
 
 /* ── 5. Drawflow Canvas ── */
 #card-canvas {
