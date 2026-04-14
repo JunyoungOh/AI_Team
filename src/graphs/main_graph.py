@@ -42,8 +42,8 @@ def error_terminal_node(state: dict) -> dict:
 
     report_path = ""
     try:
-        report_dir = os.path.join("data/reports", session_id)
-        os.makedirs(report_dir, exist_ok=True)
+        from src.utils.report_paths import build_report_dir
+        report_dir = str(build_report_dir(user_task or "작업 실행 오류", session_id=session_id))
         html = report_renderer.render_partial_fallback(
             user_task=user_task or "작업 실행 오류",
             session_id=session_id,

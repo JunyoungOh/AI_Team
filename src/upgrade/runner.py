@@ -167,8 +167,10 @@ async def run_upgrade_dev(
     Returns:
         report_dir 경로
     """
+    from src.utils.report_paths import build_report_dir
+
     settings = get_settings()
-    report_dir = f"data/reports/{session_id}"
+    report_dir = str(build_report_dir(task, session_id=session_id))
     progress_file = Path(folder_path) / _PROGRESS_FILENAME
 
     handoff_context = ""
@@ -319,10 +321,25 @@ async def run_upgrade_dev(
         report_file.write_text(html, encoding="utf-8")
         _logger.info("upgrade_rendered_fallback", path=str(report_file))
 
+    # ── 더블클릭 실행용 run.command 작성 ──
+    try:
+        from src.utils.run_command_writer import write_run_command
+
+        run_cmd_path = write_run_command(folder_path)
+    except Exception as exc:
+        _logger.warning("upgrade_run_command_failed", error=str(exc)[:200])
+        run_cmd_path = None
+
+    if run_cmd_path is not None:
+        _emit(session_id, "report", "run_command_ready",
+              path=str(run_cmd_path),
+              message=f"더블클릭 실행 파일 생성: {run_cmd_path.name}")
+
     _emit(session_id, "report", "complete",
           report_path=f"/reports/{session_id}",
           folder_path=folder_path,
           backup_path=backup_path,
+          run_command=str(run_cmd_path) if run_cmd_path else None,
           message="리포트 생성 완료")
 
     return report_dir

@@ -703,15 +703,12 @@ async def company_builder_endpoint(ws: WebSocket):
                         status = record.status.value if record.status else "unknown"
                         duration = round(record.duration_seconds or 0, 1)
 
-                        # report_path: summary에서 가져오거나, thread_id로 직접 탐색
+                        # report_path는 final_state_summary 가 유일한 authoritative source.
+                        # (예전에는 thread_id 로 data/reports/{thread_id} 를 추측했지만
+                        # 폴더가 이제 "{제목}_{날짜}" 로 네이밍되므로 thread_id 추측 불가)
                         report_path = ""
                         if record.final_state_summary:
                             report_path = record.final_state_summary.get("report_path", "")
-                        if not report_path and record.thread_id:
-                            import os
-                            candidate = f"data/reports/{record.thread_id}"
-                            if os.path.isdir(candidate):
-                                report_path = f"/reports/{record.thread_id}"
 
                         # 보고서가 있으면 completed로 간주
                         if report_path and status == "running":

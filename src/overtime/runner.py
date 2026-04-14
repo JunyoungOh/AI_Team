@@ -267,9 +267,11 @@ async def run_overtime(
     """야근팀 전체 루프 실행. 완료 시 report_dir 반환."""
     from src.company_builder.storage import update_overtime_iteration
 
+    from src.utils.report_paths import build_report_dir
+
     settings = get_settings()
     work_dir = f"data/overtime/{session_id}"
-    report_dir = f"data/reports/{session_id}"
+    report_dir = str(build_report_dir(task, session_id=session_id))
     Path(work_dir).mkdir(parents=True, exist_ok=True)
 
     previous_eval = None

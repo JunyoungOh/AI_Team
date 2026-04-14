@@ -247,11 +247,10 @@ class SimSession:
         # If no report was generated, try to create a minimal one
         if not report_path:
             try:
-                from pathlib import Path as _Path
                 from src.utils import report_renderer
+                from src.utils.report_paths import build_report_dir
 
-                fallback_dir = _Path("data/reports") / thread_id
-                fallback_dir.mkdir(parents=True, exist_ok=True)
+                fallback_dir = build_report_dir("작업 결과", session_id=thread_id)
                 fallback_file = fallback_dir / "results.html"
                 if not fallback_file.exists():
                     fallback_file.write_text(

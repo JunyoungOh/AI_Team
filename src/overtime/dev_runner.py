@@ -195,9 +195,11 @@ async def run_dev_overtime(
     from src.company_builder.storage import update_overtime_iteration
     from src.utils.workspace import resolve_selected_paths
 
+    from src.utils.report_paths import build_report_dir
+
     settings = get_settings()
     work_dir = f"data/workspace/overtime/output/{session_id}/app"
-    report_dir = f"data/reports/{session_id}"
+    report_dir = str(build_report_dir(task, session_id=session_id))
     Path(work_dir).mkdir(parents=True, exist_ok=True)
 
     file_paths = resolve_selected_paths("overtime", workspace_files or [])
@@ -357,9 +359,24 @@ async def run_dev_overtime(
         report_file.write_text(html, encoding="utf-8")
         _logger.info("dev_rendered_fallback", path=str(report_file))
 
+    # ── 더블클릭 실행용 run.command 작성 ──
+    try:
+        from src.utils.run_command_writer import write_run_command
+
+        run_cmd_path = write_run_command(work_dir)
+    except Exception as exc:
+        _logger.warning("dev_run_command_failed", error=str(exc)[:200])
+        run_cmd_path = None
+
+    if run_cmd_path is not None:
+        _emit(session_id, "report", "run_command_ready",
+              path=str(run_cmd_path),
+              message=f"더블클릭 실행 파일 생성: {run_cmd_path.name}")
+
     _emit(session_id, "report", "complete",
           report_path=f"/reports/{session_id}",
           app_dir=work_dir,
+          run_command=str(run_cmd_path) if run_cmd_path else None,
           message="리포트 생성 완료")
 
     if overtime_id and user_id:

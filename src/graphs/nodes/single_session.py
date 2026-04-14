@@ -149,22 +149,6 @@ def _filter_session_tools(tools: list[str], enabled_mcp: frozenset[str]) -> list
     return filtered
 
 
-def _build_report_dir(user_task: str, session_id: str) -> str:
-    """task 제목을 기반으로 보고서 폴더 경로를 생성."""
-    # 제목에서 폴더명 생성 (최대 50자, 파일시스템 안전 문자만)
-    name = user_task.strip()[:50]
-    # 파일시스템에 안전하지 않은 문자 제거
-    name = re.sub(r'[<>:"/\\|?*]', '', name)
-    name = re.sub(r'\s+', '_', name).strip('_')
-    if not name:
-        name = session_id
-    # 동일 이름 충돌 방지: 이미 존재하면 session_id 접미사
-    base = f"data/reports/{name}"
-    if Path(base).exists():
-        base = f"data/reports/{name}_{session_id[:6]}"
-    return base
-
-
 def _extract_qa_context(state: dict) -> tuple[list[str], list[str]]:
     """state에서 명확화 질문과 사용자 답변을 추출."""
     questions = []
@@ -573,8 +557,9 @@ async def single_session_node(state: dict) -> dict:
     session_id = state.get("session_id", "default")
     user_task = state.get("user_task", "")
 
-    # 폴더명: task 제목 기반 (안전한 파일명으로 변환)
-    report_dir = _build_report_dir(user_task, session_id)
+    # 폴더명: "{제목}_{생산일}" (src/utils/report_paths.py)
+    from src.utils.report_paths import build_report_dir
+    report_dir = str(build_report_dir(user_task, session_id=session_id))
     questions, answers = _extract_qa_context(state)
     domains = state.get("selected_domains", ["research"])
     complexity = state.get("estimated_complexity", "low")
