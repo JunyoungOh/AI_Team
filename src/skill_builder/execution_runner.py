@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from src.config.settings import get_settings
 from src.skill_builder.execution_streamer import stream_skill_execution
 from src.skill_builder.run_history import RunRecord, save_run
 from src.skill_builder.skill_loader import (
@@ -129,6 +130,7 @@ async def run_skill(
             cwd=cwd,
             timeout=timeout,
             on_event=on_event,
+            effort=get_settings().worker_effort,
         )
     except Exception as e:
         return save_run(

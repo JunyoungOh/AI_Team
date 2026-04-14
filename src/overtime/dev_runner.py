@@ -61,6 +61,7 @@ async def _run_with_rate_limit_retry(
     cwd: str | None = None,
     activity_event_type: str = "overtime_activity",
     emit_event_type: str = "dev_progress",
+    effort: str | None = None,
 ) -> str:
     """CLI 세션 실행 + 사용량 파일 기반 rate limit 재시도.
 
@@ -83,6 +84,7 @@ async def _run_with_rate_limit_retry(
                 timeout=timeout,
                 cwd=cwd,
                 activity_event_type=activity_event_type,
+                effort=effort,
             )
         except RateLimitError as e:
             wait_sec, is_rl = _get_rate_limit_wait()
@@ -239,6 +241,7 @@ async def run_dev_overtime(
                 model=settings.worker_model,
                 max_turns=200,
                 timeout=1800,  # 30분
+                effort=settings.worker_effort,
             )
         except Exception as e:
             _logger.error("dev_session_error", session=session_num, error=str(e))
@@ -297,6 +300,7 @@ async def run_dev_overtime(
             model=settings.worker_model,
             max_turns=20,
             timeout=300,
+            effort=settings.worker_effort,
         )
     except Exception as e:
         _logger.error("dev_report_error", error=str(e))

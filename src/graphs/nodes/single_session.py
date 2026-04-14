@@ -190,6 +190,7 @@ async def _stream_session(
     model: str,
     max_turns: int,
     timeout: int,
+    effort: str | None = None,
 ) -> tuple[str, bool, bool]:
     """CLI subprocess를 스트리밍으로 실행하고 활동 이벤트를 emit.
 
@@ -225,6 +226,8 @@ async def _stream_session(
         "--allowedTools", ",".join(session_tools),
         "--permission-mode", "auto",
     ]
+    if effort:
+        cmd.extend(["--effort", effort])
     if mcp_config_path:
         cmd.extend(["--mcp-config", mcp_config_path, "--strict-mcp-config"])
 
@@ -382,6 +385,7 @@ async def _finalize_retry(
     partial_text: str,
     session_id: str,
     model: str,
+    effort: str | None = None,
 ) -> bool:
     """Stream idle 로 끊긴 세션을 짧은 retry 로 마무리.
 
@@ -425,6 +429,7 @@ async def _finalize_retry(
             model=model,
             max_turns=3,
             timeout=120,
+            effort=effort,
         )
     except Exception as exc:
         _logger.warning("single_session_finalize_retry_failed", error=str(exc)[:200])
@@ -669,6 +674,7 @@ async def single_session_node(state: dict) -> dict:
             model=settings.worker_model,
             max_turns=max_turns,
             timeout=timeout,
+            effort=settings.worker_effort,
         )
         elapsed = time.time() - start_time
         _logger.info(
@@ -710,6 +716,7 @@ async def single_session_node(state: dict) -> dict:
             partial_text=result,
             session_id=session_id,
             model=settings.worker_model,
+            effort=settings.worker_effort,
         )
 
     _resolve_report_html(

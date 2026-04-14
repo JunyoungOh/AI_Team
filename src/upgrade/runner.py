@@ -118,6 +118,7 @@ async def prepare_and_analyze(
             timeout=300,
             cwd=abs_folder,
             activity_event_type="upgrade_activity",
+            effort=settings.worker_effort,
         )
     except Exception as e:
         _logger.error("upgrade_analyze_failed", error=str(e))
@@ -214,6 +215,7 @@ async def run_upgrade_dev(
                 cwd=folder_path,
                 activity_event_type="upgrade_activity",
                 emit_event_type="upgrade_progress",
+                effort=settings.worker_effort,
             )
         except Exception as e:
             _logger.error("upgrade_session_error", session=session_num, error=str(e))
@@ -264,6 +266,7 @@ async def run_upgrade_dev(
             cwd=folder_path,
             activity_event_type="upgrade_activity",
             emit_event_type="upgrade_progress",
+            effort=settings.worker_effort,
         )
     except Exception as e:
         _logger.error("upgrade_report_error", error=str(e))

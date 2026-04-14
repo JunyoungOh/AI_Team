@@ -127,6 +127,7 @@ async def _run_cli_session(
     timeout: int = 420,
     cwd: str | None = None,
     activity_event_type: str = "overtime_activity",
+    effort: str | None = None,
 ) -> str:
     """CLI subprocess를 실행하고 결과를 반환. rate limit 시 RateLimitError.
 
@@ -150,6 +151,8 @@ async def _run_cli_session(
         "--allowedTools", ",".join(tools),
         "--permission-mode", "auto",
     ]
+    if effort:
+        cmd.extend(["--effort", effort])
 
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
@@ -303,6 +306,7 @@ async def run_overtime(
                     system_prompt=system, user_prompt=user,
                     tools=_OVERTIME_TOOLS, session_id=session_id,
                     model=settings.worker_model, max_turns=60, timeout=420,
+                    effort=settings.worker_effort,
                 )
                 break
             except RateLimitError:
@@ -347,6 +351,7 @@ async def run_overtime(
                     system_prompt=eval_system, user_prompt=eval_user,
                     tools=_EVAL_TOOLS, session_id=session_id,
                     model=settings.worker_model, max_turns=10, timeout=120,
+                    effort=settings.worker_effort,
                 )
                 break
             except RateLimitError:
@@ -416,6 +421,7 @@ async def run_overtime(
                 system_prompt=final_system, user_prompt=final_user,
                 tools=_OVERTIME_TOOLS, session_id=session_id,
                 model=settings.worker_model, max_turns=40, timeout=300,
+                effort=settings.worker_effort,
             )
             break
         except RateLimitError:

@@ -39,6 +39,7 @@ async def stream_skill_execution(
     cwd: str,
     timeout: int,
     on_event: EventCallback,
+    effort: str | None = None,
     _proc_factory: Optional[Callable[..., Awaitable]] = None,
 ) -> tuple[str, int, bool]:
     """스트리밍 실행. Returns: (full_text, tool_count, timed_out)"""
@@ -53,6 +54,8 @@ async def stream_skill_execution(
         "--append-system-prompt", system_prompt,
         "--permission-mode", "auto",
     ]
+    if effort:
+        cmd.extend(["--effort", effort])
     if allowed_tools:
         cmd.extend(["--allowedTools", ",".join(allowed_tools)])
 
