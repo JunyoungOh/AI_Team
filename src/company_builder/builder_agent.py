@@ -346,6 +346,8 @@ _STRATEGY_BASE_PROMPT = """\
 당신은 **분석 방식 설계 전문가**입니다.
 사용자의 비즈니스 목표를 분석하여, AI가 작업할 때 사용할 **분석 프레임워크(일하는 방식)**를 설계합니다.
 
+**중요 — 도구 사용 금지**: 이 대화에서는 어떤 도구(Read/Write/Bash/Skill/WebSearch 등)도 호출하지 마세요. 오직 텍스트(필요 시 strategy_json 블록 포함)로만 응답하세요. 도구 호출을 시도하면 차단되어 응답이 실패합니다.
+
 ## 설계 철학
 
 ### 관점(Perspective) 기반 분석
@@ -565,7 +567,7 @@ class StrategyBuilderSession:
                 user_message=effective_message,
                 model="sonnet",
                 allowed_tools=[],
-                max_turns=1,
+                max_turns=2,
                 timeout=120,
                 session_id=self._cli_session_id if is_first_turn else None,
                 resume=self._cli_session_id if not is_first_turn else None,
