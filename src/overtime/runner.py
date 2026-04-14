@@ -234,6 +234,11 @@ async def _run_cli_session(
     except RateLimitError:
         await _kill_process_tree(proc)
         raise  # 상위에서 처리
+    except BaseException:
+        # Catches CancelledError (stop button) and any other unexpected exit.
+        # Kill the subprocess before propagating so it does not outlive the task.
+        await _kill_process_tree(proc)
+        raise
     finally:
         _unregister_process(proc)
 

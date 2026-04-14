@@ -822,7 +822,7 @@ async def overtime_endpoint(ws: WebSocket):
     import uuid
     from src.company_builder import storage
     from src.overtime.runner import run_overtime
-    from src.modes.common import get_mode_event_queue
+    from src.modes.common import get_mode_event_queue, run_task_with_stop_listener
 
     _overtime_task: asyncio.Task | None = None
     _session_id = ""
@@ -909,7 +909,15 @@ async def overtime_endpoint(ws: WebSocket):
                 ))
 
                 try:
-                    await _overtime_task
+                    result = await run_task_with_stop_listener(
+                        ws, _overtime_task, {"stop_overtime"},
+                    )
+                    if result == "stopped":
+                        await ws.send_json({"type": "overtime_stopped", "data": {}})
+                except WebSocketDisconnect:
+                    raise
+                except asyncio.CancelledError:
+                    pass
                 except Exception as e:
                     await ws.send_json({"type": "error", "data": {"message": str(e)[:300]}})
                 finally:
@@ -1051,7 +1059,7 @@ async def upgrade_endpoint(ws: WebSocket):
 
     import asyncio
     import uuid
-    from src.modes.common import get_mode_event_queue
+    from src.modes.common import get_mode_event_queue, run_task_with_stop_listener
     from src.upgrade.runner import prepare_and_analyze, run_upgrade_dev
 
     _upgrade_task: asyncio.Task | None = None
@@ -1155,7 +1163,13 @@ async def upgrade_endpoint(ws: WebSocket):
                     session_id=_session_id,
                 ))
                 try:
-                    await _upgrade_task
+                    result = await run_task_with_stop_listener(
+                        ws, _upgrade_task, {"stop_upgrade"},
+                    )
+                    if result == "stopped":
+                        await ws.send_json({"type": "upgrade_stopped", "data": {}})
+                except WebSocketDisconnect:
+                    raise
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
@@ -1240,7 +1254,13 @@ async def upgrade_endpoint(ws: WebSocket):
                     )
                 )
                 try:
-                    await _upgrade_task
+                    result = await run_task_with_stop_listener(
+                        ws, _upgrade_task, {"stop_dev"},
+                    )
+                    if result == "stopped":
+                        await ws.send_json({"type": "overtime_stopped", "data": {}})
+                except WebSocketDisconnect:
+                    raise
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:

@@ -51,3 +51,70 @@ def emit_mode_event(session_id: str, event: dict):
 
 def cleanup_mode_event_queue(session_id: str):
     _mode_event_queues.pop(session_id, None)
+
+
+async def run_task_with_stop_listener(
+    ws,
+    task: "asyncio.Task",
+    stop_types: set[str],
+) -> str:
+    """Run `task` while concurrently listening for stop messages on `ws`.
+
+    Solves the "blocked receive loop" problem: a WebSocket endpoint that
+    directly `await`s a long-running task cannot simultaneously process stop
+    messages, because control never returns to `ws.receive_json()` until the
+    task completes. This helper spawns a parallel listener; if a message with
+    `type` in `stop_types` arrives, `task` is cancelled and cleanup runs.
+
+    Non-stop messages received while the task is running are dropped — the
+    frontend is expected to disable other inputs during execution.
+
+    Returns:
+        "completed" — task finished normally.
+        "stopped" — a stop message was received and task was cancelled.
+
+    Raises:
+        The exception from `ws.receive_json()` (e.g. WebSocketDisconnect) if
+        the socket fails during listening; `task` is cancelled first.
+        The exception from `task` itself, if any, after listener cleanup.
+    """
+    async def _listen():
+        while True:
+            msg = await ws.receive_json()
+            if msg.get("type") in stop_types:
+                return
+
+    listener = asyncio.create_task(_listen())
+
+    try:
+        done, _pending = await asyncio.wait(
+            {task, listener},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+    except BaseException:
+        # Outer cancellation (e.g. endpoint torn down) — clean up both children
+        listener.cancel()
+        task.cancel()
+        raise
+
+    if listener in done:
+        listener_exc = listener.exception()
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass  # task's own finally blocks handle subprocess kill
+        if listener_exc is not None:
+            raise listener_exc
+        return "stopped"
+
+    # Task completed first — cancel listener, propagate task exception
+    listener.cancel()
+    try:
+        await listener
+    except BaseException:
+        pass
+    exc = task.exception()
+    if exc is not None:
+        raise exc
+    return "completed"
