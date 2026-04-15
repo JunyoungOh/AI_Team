@@ -240,6 +240,39 @@ def _normalise_law_hit(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _collect_paragraph_text(node: Any) -> list[str]:
+    """Recursively collect all body text from 항/호/목 nesting.
+
+    law.go.kr returns articles in a tiered structure:
+        조문단위 → 항 (paragraph, ①②③) → 호 (item, 1.2.3.) → 목 (sub-item, 가나다)
+    Simple articles have body in ``조문내용`` and no ``항``. Complex articles
+    have ONLY the title in ``조문내용`` and the real body split across the
+    ``항`` array. The old normalise function only read ``조문내용`` and missed
+    every complex article — symptom: "근로기준법 제23조: title only, no body".
+    """
+    parts: list[str] = []
+    if isinstance(node, dict):
+        # Direct body fields at this level
+        for key in ("항내용", "호내용", "목내용"):
+            val = node.get(key)
+            if isinstance(val, str) and val.strip():
+                parts.append(val.strip())
+        # Recurse into nested children
+        for key in ("항", "호", "목"):
+            child = node.get(key)
+            if child is None:
+                continue
+            if isinstance(child, list):
+                for c in child:
+                    parts.extend(_collect_paragraph_text(c))
+            else:
+                parts.extend(_collect_paragraph_text(child))
+    elif isinstance(node, list):
+        for c in node:
+            parts.extend(_collect_paragraph_text(c))
+    return parts
+
+
 def _normalise_article(item: dict[str, Any]) -> dict[str, Any]:
     jo_code = str(item.get("조문번호") or item.get("조문키") or "").strip()
     # 조문가지번호 handling: e.g. 제38조의2 → key "003802"
@@ -249,12 +282,18 @@ def _normalise_article(item: dict[str, Any]) -> dict[str, Any]:
     except (ValueError, TypeError):
         compound = jo_code.zfill(6)
     title = item.get("조문제목", "")
-    text = (
-        item.get("조문내용")
-        or item.get("조문본문")
-        or ""
-    )
-    cleaned = _clean_text(text)
+    # The title line — 조문내용 for simple articles is the full body, for
+    # complex articles it's just "제23조(해고 등의 제한)" with the real body
+    # split into paragraphs (항).
+    title_line = (item.get("조문내용") or item.get("조문본문") or "").strip()
+    paragraph_texts = _collect_paragraph_text(item)
+    if paragraph_texts:
+        # Complex article: assemble title line + all paragraphs
+        full_text = title_line + "\n" + "\n".join(paragraph_texts) if title_line else "\n".join(paragraph_texts)
+    else:
+        # Simple article: title_line IS the full body
+        full_text = title_line
+    cleaned = _clean_text(full_text)
     # law.go.kr mixes 편/장/절/관 headings into the 조문단위 list alongside
     # actual articles. Two signals we use to skip them:
     # - "조문여부" field: "조문" = article, anything else (편장, 편장명, etc.) = heading
