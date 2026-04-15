@@ -439,7 +439,10 @@ DART_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "description": (
             "공시 목록을 검색합니다. corp_code를 지정하면 특정 회사의 공시만, 없으면 전체 "
             "회사 대상으로 기간·유형 필터만 적용됩니다. pblntf_ty: A=정기공시, B=주요사항, "
-            "C=발행공시, D=지분공시, E=기타, F=외부감사. 연/분기 보고서 찾을 때는 pblntf_ty='A'."
+            "C=발행공시, D=지분공시, E=기타, F=외부감사. 연/분기 보고서 찾을 때는 pblntf_ty='A'. "
+            "bgn_de/end_de를 생략하면 **자동으로 오늘 기준 12개월 범위**가 적용됩니다 — "
+            "'최신 사업보고서' 같은 일반 질문에는 날짜를 생략하고 pblntf_ty='A'만 넘기는 게 가장 안전합니다. "
+            "특정 연도를 원하면 bgn_de/end_de를 명시하세요(예: 2025년 전체 = bgn_de='20250101', end_de='20251231')."
         ),
         "input_schema": {
             "type": "object",

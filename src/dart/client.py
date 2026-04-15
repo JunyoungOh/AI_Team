@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -151,16 +152,19 @@ class DartClient:
             page_no: 페이지 번호
             page_count: 페이지당 건수 (1-100)
         """
+        # Open DART list.json 은 bgn_de 가 누락되면 빈 배열을 반환한다 (empirical).
+        # 호출자(또는 LLM)가 날짜를 넘기지 않았을 때도 "최신 N년" 이 자동 조회되도록
+        # 오늘 기준 12개월 범위를 디폴트로 채운다. 둘 중 하나만 있으면 나머지를 보완.
+        bgn_de, end_de = _normalise_date_range(bgn_de, end_de)
+
         params: dict[str, Any] = {
             "page_no": str(page_no),
             "page_count": str(max(1, min(100, page_count))),
+            "bgn_de": bgn_de,
+            "end_de": end_de,
         }
         if corp_code:
             params["corp_code"] = corp_code
-        if bgn_de:
-            params["bgn_de"] = bgn_de
-        if end_de:
-            params["end_de"] = end_de
         if pblntf_ty:
             params["pblntf_ty"] = pblntf_ty
         if pblntf_detail_ty:
@@ -302,6 +306,33 @@ class DartClient:
 
 
 # ── Normalisation helpers ───────────────────────
+
+
+def _normalise_date_range(
+    bgn_de: str | None,
+    end_de: str | None,
+) -> tuple[str, str]:
+    """Fill missing bgn_de/end_de with a 12-month window ending today.
+
+    Open DART's list.json returns an empty array when bgn_de is missing, so
+    we always need to provide both. Defaults:
+    - both missing → bgn = today − 365d, end = today
+    - only bgn missing → bgn = end − 365d
+    - only end missing → end = today (then window anchored on end)
+    """
+    today = datetime.now()
+
+    def _parse(s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y%m%d")
+        except ValueError:
+            return None
+
+    end_dt = _parse(end_de) or today
+    bgn_dt = _parse(bgn_de) or (end_dt - timedelta(days=365))
+    return bgn_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d")
 
 
 def _as_int(value: Any) -> int:
