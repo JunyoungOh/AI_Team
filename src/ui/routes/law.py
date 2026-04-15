@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.config.settings import get_settings
-from src.law.session import LawSession
+from src.law.mcp_session import LawMcpSession
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ async def law_endpoint(ws: WebSocket):
         return
 
     user_id = user["sub"] if user else ""
-    session = LawSession(ws, user_id=user_id)
+    session = LawMcpSession(ws, user_id=user_id)
 
     try:
         await session.run()

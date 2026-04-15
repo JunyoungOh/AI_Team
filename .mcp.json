@@ -28,6 +28,13 @@
       "env": {
         "DART_API_KEY": "${DART_API_KEY}"
       }
+    },
+    "law": {
+      "command": "python3",
+      "args": ["-m", "src.law.mcp_server"],
+      "env": {
+        "LAW_OC": "${LAW_OC}"
+      }
     }
   }
 }
