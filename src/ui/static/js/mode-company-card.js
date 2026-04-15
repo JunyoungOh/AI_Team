@@ -410,6 +410,11 @@ var CardView = (function () {
           LawManager.mountInShell(container); _modeBooted[mode] = true;
         }
         break;
+      case 'dart':
+        if (typeof DartManager !== 'undefined' && DartManager.mountInShell) {
+          DartManager.mountInShell(container); _modeBooted[mode] = true;
+        }
+        break;
     }
   }
 
@@ -883,7 +888,7 @@ var CardView = (function () {
 
   /**
    * getActiveMode — Returns the current sidebar mode.
-   * @returns {'builder'|'discussion'|'foresight'|'persona'|'secretary'|'law'}
+   * @returns {'builder'|'discussion'|'foresight'|'persona'|'secretary'|'law'|'dart'}
    */
   function getActiveMode() {
     return _activeMode;

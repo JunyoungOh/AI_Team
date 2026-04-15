@@ -210,6 +210,13 @@ class Settings(BaseSettings):
     law_session_ttl_minutes: int = 30     # WS 세션 비활성 타임아웃
     law_request_timeout: int = 20         # law.go.kr HTTP 타임아웃
 
+    # Open DART (opendart.fss.or.kr) — 전자공시 API
+    # dart_api_key는 202행에 이미 선언되어 있음
+    dart_cache_ttl_search: int = 3600     # 공시 목록 1시간
+    dart_cache_ttl_full: int = 86400      # 공시 원문/기업개황 24시간
+    dart_session_ttl_minutes: int = 30    # WS 세션 비활성 타임아웃
+    dart_request_timeout: int = 20        # Open DART HTTP 타임아웃
+
     # Optional: LangSmith
     langchain_tracing_v2: bool = False
     langchain_api_key: str = ""

@@ -47,6 +47,7 @@ from src.ui.routes.foresight import router as foresight_router
 from src.ui.routes.discussion import router as discussion_router
 from src.ui.routes.workspace import router as workspace_router
 from src.ui.routes.law import router as law_router
+from src.ui.routes.dart import router as dart_router
 
 app = FastAPI(title="Enterprise Agent Simulation")
 
@@ -72,6 +73,7 @@ app.include_router(foresight_router)
 app.include_router(discussion_router)
 app.include_router(workspace_router)
 app.include_router(law_router)
+app.include_router(dart_router)
 
 
 # ── Claude Code Usage API ─────────────────────────
