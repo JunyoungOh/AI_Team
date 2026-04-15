@@ -373,35 +373,28 @@ async def _finalize_retry(
 ) -> bool:
     """Stream idle 로 끊긴 세션을 짧은 retry 로 마무리.
 
-    네트워크 호출 없이 partial_text 를 그대로 받아 ``report.json`` 만
-    생성한다. 도구는 Read/Write/Bash/Glob 만 허용하여 idle timeout 의
-    재발 위험을 차단한다.
+    네트워크 호출 없이 partial_text 를 그대로 받아 ``results.html`` 한 장만
+    다시 쓰게 한다. 도구는 Read/Write/Bash/Glob 만 허용하여 idle timeout 의
+    재발 위험을 차단한다. 디자인/구조는 LLM 이 자유롭게 결정한다.
 
     Returns:
-        True 면 ``{report_dir}/report.json`` 이 새로 생성됨. False 면 실패.
+        True 면 ``{report_dir}/results.html`` 이 새로 생성됨. False 면 실패.
     """
-    schema_hint = (
-        '{"title": "...", "executive_summary": "...", '
-        '"sections": [{"heading": "...", "body_md": "...", '
-        '"sources": ["..."]}], '
-        '"recommendations": ["..."], "sources": ["..."]}'
-    )
     prompt = (
         f"이전 리서치 세션이 응답 스트림 중간에 끊겼습니다. "
         f"새로운 리서치를 절대 수행하지 마세요. 웹 검색이나 fetch 도구도 사용 금지. "
         f"이미 수집된 아래 부분 결과만을 사용해서 "
-        f"`{report_dir}/report.json` 한 파일만 만드세요.\n\n"
+        f"`{report_dir}/results.html` 한 파일만 만드세요.\n\n"
         f"먼저 `mkdir -p {report_dir}` 실행. "
         f"그 다음 Write 도구로 한 번만 저장하면 끝입니다.\n\n"
         f"## 원래 작업\n{user_task}\n\n"
         f"## 부분 결과 (이것만 활용)\n{partial_text[:30000]}\n\n"
-        f"## JSON 스키마\n{schema_hint}\n\n"
-        f"누락된 정보는 있는 그대로 두고, 불완전한 보고서임을 "
-        f"executive_summary 첫 문장에 한 줄로만 알려주세요. "
-        f"새 정보를 지어내지 마세요."
+        f"리포트의 구조·디자인·문체·레이아웃은 자유롭게 결정하세요. "
+        f"단일 파일 self-contained HTML 이어야 하고, PDF 로 변환해도 읽기 좋게 만들어주세요. "
+        f"불완전한 보고서임을 서두에 한 줄로만 알려주세요. 새 정보를 지어내지 마세요."
     )
     finalize_system = (
-        "당신은 부분 결과를 받아 구조화된 JSON 으로 마무리하는 정리 담당입니다. "
+        "당신은 부분 결과를 받아 self-contained HTML 리포트 한 장으로 마무리하는 정리 담당입니다. "
         "새로운 리서치는 절대 수행하지 마세요. Write 도구 한 번만 사용합니다."
     )
 
@@ -412,14 +405,14 @@ async def _finalize_retry(
             session_id=session_id,
             model=model,
             max_turns=3,
-            timeout=120,
+            timeout=180,
             effort=effort,
         )
     except Exception as exc:
         _logger.warning("single_session_finalize_retry_failed", error=str(exc)[:200])
         return False
 
-    target = Path(report_dir) / "report.json"
+    target = Path(report_dir) / "results.html"
     if target.exists() and target.stat().st_size > 0:
         _logger.info("single_session_finalize_retry_success", path=str(target), text_len=len(text))
         return True
@@ -430,6 +423,42 @@ async def _finalize_retry(
         text_len=len(text),
     )
     return False
+
+
+def _write_minimal_fallback_html(
+    *,
+    html_target: Path,
+    user_task: str,
+    raw_text: str,
+    reason: str,
+) -> None:
+    """LLM 이 results.html 을 남기지 못한 경우의 최소한의 안전망.
+
+    템플릿/렌더러/디자인 규칙 없이, 받은 raw_text 를 그대로 ``<pre>`` 안에
+    담아 사용자가 최소한 읽을 수는 있게 한다. 의도적으로 시각 자산을
+    쓰지 않는다 — 진짜 예쁜 리포트는 LLM 이 작성할 때만 존재한다는 계약.
+    """
+    import html as _html
+
+    reason_note = {
+        "timeout": "작업이 시간 제한으로 중단되었습니다.",
+        "stream_idle_timeout": "AI 응답 스트림이 중간에 끊겼습니다.",
+        "empty_result": "AI 응답이 비어 있습니다.",
+        "no_artifact": "AI 가 결과 파일을 저장하지 못했습니다.",
+    }.get(reason, "결과 파일을 만들지 못했습니다.")
+
+    safe_task = _html.escape(user_task or "")
+    safe_text = _html.escape(raw_text or "")
+    body = (
+        "<!doctype html><html lang='ko'><meta charset='utf-8'>"
+        f"<title>{safe_task or 'Report'}</title>"
+        "<body style='font-family:system-ui,sans-serif;max-width:860px;margin:40px auto;padding:0 20px;line-height:1.6'>"
+        f"<h1 style='font-size:1.4rem'>{safe_task or '리포트 생성 실패'}</h1>"
+        f"<p><strong>{reason_note}</strong> 아래는 모델이 작업 중 마지막으로 출력한 원문입니다.</p>"
+        f"<pre style='white-space:pre-wrap;background:#f6f6f6;padding:16px;border-radius:6px'>{safe_text}</pre>"
+        "</body></html>"
+    )
+    html_target.write_text(body, encoding="utf-8")
 
 
 def _resolve_report_html(
@@ -444,80 +473,19 @@ def _resolve_report_html(
 ) -> Path:
     """CLI 세션이 끝난 뒤 사용자에게 보여줄 results.html 을 보장한다.
 
-    계단형 fallback:
-      1. report.json 이 있으면 → renderer 로 results.html 생성
-      2. CLI 가 직접 쓴 results.html 이 완결이면 → 그대로 둠
-      3. report.md / results.md 가 있으면 → renderer 로 results.html 생성
-      4. 그래도 없으면 → partial_fallback (호출 측이 finalize_retry 시도 후)
+    싱글 세션은 LLM 이 ``results.html`` 을 직접 작성한다. Python 쪽은
+    렌더링·템플릿·스타일에 관여하지 않는다. 두 갈래만 존재:
+      1. LLM 이 작성한 ``results.html`` 이 있으면 → 그대로 사용
+      2. 없으면 → raw_text 를 <pre> 로 담는 최소 fallback HTML 만 기록
     """
-    from src.utils import report_renderer
-
     rd = Path(report_dir)
     rd.mkdir(parents=True, exist_ok=True)
     html_target = rd / "results.html"
 
-    # 1) 구조화 JSON 우선
-    json_path = rd / "report.json"
-    if json_path.exists() and json_path.stat().st_size > 0:
-        try:
-            html = report_renderer.render_from_json_file(
-                json_path,
-                session_id=session_id,
-                fallback_title=user_task,
-            )
-            html_target.write_text(html, encoding="utf-8")
-            _logger.info("single_session_rendered_from_json", path=str(html_target))
-            return html_target
-        except (ValueError, OSError, json.JSONDecodeError) as exc:
-            _logger.warning(
-                "single_session_render_json_failed",
-                path=str(json_path),
-                error=str(exc)[:200],
-            )
-
-    # 2) CLI 가 완결된 results.html 을 직접 썼다면 존중
-    if report_renderer.is_complete_html(html_target):
-        _logger.info("single_session_existing_html_kept", path=str(html_target))
+    if html_target.exists() and html_target.stat().st_size > 0:
+        _logger.info("single_session_llm_html_kept", path=str(html_target))
         return html_target
-    if html_target.exists():
-        try:
-            backup = html_target.with_suffix(".html.cli_partial.bak")
-            html_target.replace(backup)
-            _logger.info("single_session_partial_html_backed_up", backup=str(backup))
-        except OSError:
-            pass
 
-    # 3) markdown fallback
-    md_candidates = [rd / "report.md", rd / "results.md"]
-    md_candidates += sorted(rd.glob("results_*.md"))
-    md_candidates += sorted(rd.glob("*.md"))
-    seen: set[Path] = set()
-    for md_path in md_candidates:
-        if md_path in seen:
-            continue
-        seen.add(md_path)
-        if md_path.exists() and md_path.stat().st_size > 0:
-            try:
-                html = report_renderer.render_from_markdown_file(
-                    md_path,
-                    title=user_task or md_path.stem,
-                    session_id=session_id,
-                )
-                html_target.write_text(html, encoding="utf-8")
-                _logger.info(
-                    "single_session_rendered_from_markdown",
-                    path=str(html_target),
-                    source=str(md_path),
-                )
-                return html_target
-            except OSError as exc:
-                _logger.warning(
-                    "single_session_render_md_failed",
-                    path=str(md_path),
-                    error=str(exc)[:200],
-                )
-
-    # 4) 최후의 fallback — partial 화면을 같은 템플릿으로
     if timed_out:
         reason = "timeout"
     elif stream_idle:
@@ -527,14 +495,12 @@ def _resolve_report_html(
     else:
         reason = "no_artifact"
 
-    html = report_renderer.render_partial_fallback(
+    _write_minimal_fallback_html(
+        html_target=html_target,
         user_task=user_task,
-        session_id=session_id,
         raw_text=raw_text,
         reason=reason,
-        timeout_s=timeout_s,
     )
-    html_target.write_text(html, encoding="utf-8")
     _logger.warning(
         "single_session_fallback_rendered",
         reason=reason,
@@ -680,13 +646,10 @@ async def single_session_node(state: dict) -> dict:
         )
 
     # ── 결과 파일 리졸브 ──
-    # text-format 모드(markdown/csv/json) 에서는 사용자가 명시한 결과 파일이
-    # 핵심이지만, 사용자가 보는 카드는 결국 results.html 이므로 항상 HTML
-    # 한 본은 만들어둔다. report.json 또는 raw text 어느 쪽이든 같은 템플릿
-    # 으로 렌더되어 "크래시" 화면이 발생하지 않게 한다.
-    json_path = Path(report_dir) / "report.json"
-    if not json_path.exists() and stream_idle and result:
-        # 응답이 중간에 끊겼지만 부분 결과는 있다 → 짧은 finalize retry 로 복구.
+    # 싱글 세션은 results.html 을 LLM 이 직접 작성한다. 파일이 없고 부분
+    # 결과만 있으면 짧은 finalize retry 로 HTML 한 장만 다시 쓰게 한다.
+    html_path = Path(report_dir) / "results.html"
+    if not html_path.exists() and stream_idle and result:
         emit_mode_event(session_id, {
             "type": "activity",
             "data": {

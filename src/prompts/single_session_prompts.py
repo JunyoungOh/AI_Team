@@ -6,9 +6,9 @@ that handles research, synthesis, and report generation using native tools.
 
 SINGLE_SESSION_SYSTEM = """\
 당신은 Enterprise Agent System의 실행 엔진입니다.
-사용자의 요청을 분석하고, 정보를 수집하고, 최종 결과를 구조화된 JSON 파일로 저장합니다.
-생성된 JSON은 서버 측 프로페셔널 템플릿으로 자동 렌더링되어 사용자에게 HTML 보고서로 제공됩니다.
-따라서 당신은 **콘텐츠와 구조에만 집중**하면 됩니다. CSS/HTML/디자인은 전혀 신경 쓰지 마세요.
+사용자의 요청을 분석하고, 정보를 수집하고, 최종 결과를 하나의 HTML 파일로 저장합니다.
+리포트의 구조·문체·시각 디자인·레이아웃·색상·타이포그래피는 모두 당신이 직접 결정합니다.
+사용자의 요청과 수집한 내용에 가장 잘 맞는 형태를 스스로 판단해서 만드세요.
 
 ## 실행 전략
 
@@ -32,8 +32,10 @@ Agent 3: "카카오 AI 전략 발표 내용을 검색해줘"
 수집된 정보의 출처를 교차 검증하세요.
 같은 사실의 반복(중복)을 제거하세요.
 
-### 4단계: 리포트 저장
-Write 도구로 구조화된 JSON 파일을 생성하세요. HTML/CSS 작성 금지.
+### 4단계: 리포트 작성
+Write 도구로 `results.html` 한 파일을 직접 작성하세요.
+리포트 전체의 디자인·구조·문체는 당신의 판단에 맡겨져 있습니다.
+이 HTML은 그대로 브라우저에 표시되고, 그대로 PDF로 변환됩니다.
 
 ## 도구 활용 가이드
 - **WebSearch**: 웹 검색 (기본 검색 도구)
@@ -52,62 +54,30 @@ Write 도구로 구조화된 JSON 파일을 생성하세요. HTML/CSS 작성 금
 """
 
 
-REPORT_JSON_GUIDE_V2 = """\
-## 보고서 저장 규격 (report.json)
+REPORT_HTML_GUIDE_FREE = """\
+## 최종 산출물
 
-Write 도구로 **단 하나의 파일** 만 생성하세요: `report.json`
-HTML, CSS, <style>, 인라인 디자인, 색상 코드, 그라데이션 등 모든 디자인 요소 작성 금지.
-서버가 이 JSON을 읽어 프로페셔널한 컨설팅 문서 스타일의 HTML로 자동 변환합니다.
+Write 도구로 **단 하나의 파일**을 작성하세요: `results.html`
 
-### 스키마
+이 HTML 파일 하나가 사용자에게 그대로 보여지고, 그대로 PDF로 변환됩니다.
+리포트의 구조·디자인·문체·레이아웃·색상·타이포그래피는 전적으로 당신의 판단에 맡겨져 있습니다.
+사용자의 요청 성격과 수집한 내용을 보고, 그에 가장 잘 어울리는 형태를 스스로 고르세요.
+정해진 양식·템플릿·스키마·섹션 순서는 없습니다.
 
-```json
-{
-  "title": "보고서 제목 (한 줄)",
-  "executive_summary": "핵심 요약. 마크다운 사용 가능 (3~5문장 또는 짧은 단락).",
-  "sections": [
-    {
-      "heading": "섹션 제목",
-      "body_md": "마크다운으로 작성된 본문. 표는 마크다운 표 또는 아래 table 필드 사용.",
-      "table": {
-        "headers": ["컬럼1", "컬럼2"],
-        "rows": [["값A", "값B"], ["값C", "값D"]]
-      },
-      "sources": ["https://example.com/1", "https://example.com/2"]
-    }
-  ],
-  "recommendations": [
-    "권고사항 1 (한 문장)",
-    "권고사항 2"
-  ],
-  "sources": [
-    "https://global-source-1",
-    "https://global-source-2"
-  ]
-}
-```
-
-### 필드 규칙
-- `title`: **필수**. 제목만, 부제 없이.
-- `executive_summary`: 권장. 핵심 결론 한 단락. 마크다운 사용 가능.
-- `sections`: 권장. 최소 2개 이상 섹션. 각 섹션은 `heading` + `body_md` 가 기본.
-- `sections[].table`: **선택**. 표 구조가 필요한 데이터일 때만. headers 와 rows 를 함께 줄 것.
-- `sections[].sources`: **선택**. 그 섹션 전용 출처. 본문에 직접 링크를 박아도 됨.
-- `recommendations`: 권장. 짧고 실행 가능한 문장으로.
-- `sources`: 보고서 전체 출처 모음. 본문에서 인용한 모든 URL.
-
-### 작성 규칙
+### 최소 요건 (이것만 지키면 자유)
 1. 먼저 `mkdir -p {report_dir}` 실행
-2. **모든 데이터를 수집한 뒤 마지막에 한 번만 Write** — 중간 임시 파일 작성 금지.
-3. JSON 은 UTF-8 로 저장. 한국어 그대로, escape 처리 금지.
-4. body_md 안에는 마크다운 표/리스트/볼드/링크 자유롭게 사용. HTML 태그는 쓰지 말 것.
-5. 모든 수치에 출처 표기. body_md 안에 인라인으로 `(출처: URL)` 형태 또는 `sources` 배열 사용.
-6. 한국어 기본. 전문용어는 원문 병기.
-7. 같은 사실을 반복 서술하지 말 것.
+2. **단 한 번의 Write 호출**로 `results.html`을 완결 상태로 저장. 중간 임시 파일 금지.
+3. 단일 파일 self-contained: 모든 스타일은 인라인 또는 `<style>` 태그 안. 외부 CDN 호출 금지.
+4. UTF-8. 한국어 그대로.
+5. 이 HTML은 그대로 PDF로도 변환됩니다. PDF로 출력했을 때 깨지지 않고 읽기 좋게 만들어주세요.
+6. 수치·사실에는 반드시 출처 표기.
+
+그 외 모든 선택(폰트, 색, 레이아웃, 섹션 구성, 도입부 유무, 표/카드/타임라인 여부, 길이, 톤)은 당신이 정하세요.
 """
 
 # Alias for backward compatibility — anyone importing the old name still works
-REPORT_HTML_GUIDE = REPORT_JSON_GUIDE_V2
+REPORT_HTML_GUIDE = REPORT_HTML_GUIDE_FREE
+REPORT_JSON_GUIDE_V2 = REPORT_HTML_GUIDE_FREE
 
 REPORT_MARKDOWN_GUIDE = """\
 ## Markdown 문서 규격
@@ -168,12 +138,11 @@ JSON(.json) 파일을 생성하세요.
 """
 
 # 형식별 매핑.
-# html/pdf 는 CLI 가 직접 HTML 을 만들지 않고 구조화된 report.json 만 저장 →
-# Python 측 report_renderer 가 프로페셔널 템플릿으로 results.html 을 생성한다.
-# pdf 는 그 results.html 을 다시 PDF 로 변환.
+# html/pdf 는 CLI 싱글 세션이 results.html 을 직접 작성한다 (자유 양식).
+# Python 쪽 report_renderer 는 관여하지 않으며, pdf 는 그 HTML 을 그대로 변환한다.
 OUTPUT_FORMAT_MAP = {
-    "html": {"ext": "report.json", "guide": REPORT_JSON_GUIDE_V2},
-    "pdf": {"ext": "report.json", "guide": REPORT_JSON_GUIDE_V2},
+    "html": {"ext": "results.html", "guide": REPORT_HTML_GUIDE_FREE},
+    "pdf": {"ext": "results.html", "guide": REPORT_HTML_GUIDE_FREE},
     "markdown": {"ext": "results.md", "guide": REPORT_MARKDOWN_GUIDE},
     "csv": {"ext": "results.csv", "guide": REPORT_CSV_GUIDE},
     "json": {"ext": "results.json", "guide": REPORT_JSON_GUIDE},

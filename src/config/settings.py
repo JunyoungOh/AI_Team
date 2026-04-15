@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     # 메인 파이프라인은 항상 싱글 세션 모드로 동작. 레거시 다중 워커 경로는 제거됨.
     # Base timeout (초) — single_session_node에서 complexity에 따라 0.7~1.5배 스케일.
     # 5관점 이상 전략의 병렬 리서치 + HTML 합성에 필요한 넉넉한 여유 확보.
-    single_session_timeout: int = 1200        # 싱글 세션 기본 타임아웃 (20분)
+    single_session_timeout: int = 1500        # 싱글 세션 기본 타임아웃 (25분) — LLM 이 results.html 을 직접 작성하는 토큰 여유 포함
     single_session_max_turns: int = 100       # 싱글 세션 기본 최대 턴 수
 
     # P-E-S-R (Planner-Executor-Synthesizer-Reviewer) review loop
