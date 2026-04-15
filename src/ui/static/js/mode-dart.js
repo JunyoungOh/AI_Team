@@ -590,6 +590,10 @@ class DartManager {
       this._currentAssistantEl = null;
       this._streamText = '';
       this._isStreaming = false;
+      // Subprocess 종료 시점 — 답변 이후에 LLM 이 추가 tool_use 를 날려서
+      // 남은 .dart-typing 인디케이터들을 모두 제거. 그 툴들은 이미 백엔드에서
+      // 실행 완료됐으며 UI 에 인디케이터만 stale 로 남아있는 상태.
+      this._chat.querySelectorAll('.dart-typing').forEach((el) => el.remove());
       _dartSignalRunning(false);
       this._setInputEnabled(true);
       this._input.focus();
