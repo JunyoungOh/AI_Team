@@ -89,6 +89,60 @@ def _strip_insight_blocks(text: str) -> str:
     return _INSIGHT_RE.sub('', text).strip()
 
 
+# Matches just the opening sentinel — used by the streaming filter to detect
+# when an insight block is *about* to start (before the closing marker arrives).
+_INSIGHT_START_RE = re.compile(r'`?★\s*Insight', re.DOTALL)
+
+
+class InsightStreamFilter:
+    """Stateful filter that strips ★ Insight blocks from a streaming text feed.
+
+    The full-block regex (`_INSIGHT_RE`) only matches when both opening and
+    closing markers are present in the buffer. For a live delta stream, a
+    block can arrive across multiple chunks, so we buffer partial content
+    until we know what is safe to emit.
+
+    Contract:
+        • ``feed(chunk)`` returns the portion safe to emit right now (may be "").
+        • ``flush()`` drains any leftover text at end-of-stream; content inside
+          an unclosed insight block is discarded.
+    """
+
+    def __init__(self) -> None:
+        self._buf: str = ""
+
+    def feed(self, chunk: str) -> str:
+        if not chunk:
+            return ""
+        self._buf += chunk
+        # Strip any fully-formed insight blocks that are now in view.
+        self._buf = _INSIGHT_RE.sub("", self._buf)
+        # If an opener has appeared but no closer yet, hold back from '★'.
+        start_match = _INSIGHT_START_RE.search(self._buf)
+        if start_match is not None:
+            safe = self._buf[: start_match.start()]
+            self._buf = self._buf[start_match.start():]
+            return safe
+        # Also guard against a partial opener at the tail ('★ Insi' style).
+        tail_star = self._buf.rfind("★")
+        if tail_star >= 0 and len(self._buf) - tail_star < 20:
+            safe = self._buf[:tail_star]
+            self._buf = self._buf[tail_star:]
+            return safe
+        safe = self._buf
+        self._buf = ""
+        return safe
+
+    def flush(self) -> str:
+        """Return any leftover buffered text; discard if still inside a block."""
+        if _INSIGHT_START_RE.search(self._buf):
+            self._buf = ""
+            return ""
+        remaining = self._buf
+        self._buf = ""
+        return remaining
+
+
 def _clean_insight_from_dict(data: Any) -> Any:
     """Recursively strip ★ Insight blocks from all string values in a dict."""
     if isinstance(data, str):

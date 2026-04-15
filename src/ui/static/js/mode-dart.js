@@ -577,15 +577,19 @@ class DartManager {
       const typing = this._chat.querySelector('.dart-typing');
       if (typing) typing.remove();
       const el = document.createElement('div');
-      el.className = 'dart-msg dart-msg-ai';
+      el.className = 'dart-msg dart-msg-ai dart-msg-streaming';
       this._chat.appendChild(el);
       this._currentAssistantEl = el;
       this._streamText = '';
       this._isStreaming = true;
+      this._lastRenderAt = 0;
     }
     if (data.done) {
       if (this._currentAssistantEl && this._streamText) {
         DartManager._renderMarkdown(this._currentAssistantEl, this._streamText);
+      }
+      if (this._currentAssistantEl) {
+        this._currentAssistantEl.classList.remove('dart-msg-streaming');
       }
       this._currentAssistantEl = null;
       this._streamText = '';
@@ -599,7 +603,14 @@ class DartManager {
       this._input.focus();
     } else if (data.token) {
       this._streamText += data.token;
-      this._currentAssistantEl.textContent = this._streamText;
+      // Progressive markdown rendering — re-parse the accumulating buffer
+      // so tables, headings, and paragraphs formalize as soon as their
+      // boundaries arrive. Throttle to ~30 ms to avoid thrashing the DOM.
+      const now = performance.now();
+      if (now - (this._lastRenderAt || 0) > 30) {
+        DartManager._renderMarkdown(this._currentAssistantEl, this._streamText);
+        this._lastRenderAt = now;
+      }
       this._chat.scrollTop = this._chat.scrollHeight;
     }
   }

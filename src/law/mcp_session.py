@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config.settings import get_settings
+from src.utils.claude_code import InsightStreamFilter
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,8 @@ def _build_system_prompt() -> str:
 
 - 도구 결과에 **없는 조문번호·판례번호 지어내지 말 것** (환각 금지)
 - 조문 인용은 반드시 `[인용]` 블록 + MST 명시. 훈련 데이터에서 조문 내용 재구성 금지
-- URL 은 도구 결과의 `source_url` 그대로 복사
+- **원문 전문 링크 필수**: 인용 블록 바로 아래에 도구 결과의 `source_url` 을
+  `🔗 [원문 전체보기](source_url)` 형태로 반드시 넣는다. 판례·해석례 인용도 동일.
 - 디스클레이머 뒤에 **절대 추가 도구 호출 금지** (위반 시 세션 강제 종료)
 - 도구 결과 비어있으면 "원문을 확인할 수 없습니다" 로 중단
 
@@ -148,6 +150,8 @@ def _build_system_prompt() -> str:
 ```
 > [인용] 법령명 제○조 (MST=xxxx)
 > {{도구가 준 원문 그대로, 한 글자도 바꾸지 말 것}}
+
+🔗 [원문 전체보기](https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq={{MST}})
 ```
 
 ## 디스클레이머 (답변 말미 고정)
@@ -269,6 +273,7 @@ class LawMcpSession:
         cmd = [
             "claude", "-p", user_text,
             "--output-format", "stream-json",
+            "--include-partial-messages",
             "--verbose",
             "--model", "sonnet",
             "--max-turns", "10",
@@ -300,6 +305,7 @@ class LawMcpSession:
 
         acc_text: list[str] = []
         had_output = False
+        insight_filter = InsightStreamFilter()
 
         try:
             async with asyncio.timeout(300):
@@ -314,7 +320,7 @@ class LawMcpSession:
                         event = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    if await self._handle_stream_event(event, acc_text):
+                    if await self._handle_stream_event(event, acc_text, insight_filter):
                         had_output = True
         except asyncio.TimeoutError:
             logger.warning("LawMcpSession: claude subprocess timeout after 300s")
@@ -334,6 +340,15 @@ class LawMcpSession:
                     os.unlink(mcp_config_path)
                 except OSError:
                     pass
+
+        # Drain any text the insight filter held back at the tail of the stream.
+        tail = insight_filter.flush()
+        if tail:
+            acc_text.append(tail)
+            await self._send({
+                "type": "law_stream",
+                "data": {"token": tail, "done": False},
+            })
 
         # Auto-append disclaimer if the LLM forgot it
         full_text = "".join(acc_text).strip()
@@ -356,10 +371,33 @@ class LawMcpSession:
         self,
         event: dict[str, Any],
         acc_text: list[str],
+        insight_filter: InsightStreamFilter,
     ) -> bool:
         """Process one stream-json event. Returns True if content was emitted."""
         etype = event.get("type")
         emitted = False
+
+        # Incremental text deltas (--include-partial-messages). Each event
+        # carries a small slice of the assistant's answer as it is generated,
+        # letting the UI render citations and paragraphs live instead of
+        # waiting for the whole turn.
+        if etype == "stream_event":
+            inner = event.get("event", {}) or {}
+            if inner.get("type") == "content_block_delta":
+                delta = inner.get("delta", {}) or {}
+                if delta.get("type") == "text_delta":
+                    raw = delta.get("text", "") or ""
+                    safe = insight_filter.feed(raw)
+                    if safe:
+                        acc_text.append(safe)
+                        await self._send({
+                            "type": "law_stream",
+                            "data": {"token": safe, "done": False},
+                        })
+                        emitted = True
+                        if not self._disclaimer_seen and _DISCLAIMER[:20] in "".join(acc_text):
+                            self._disclaimer_seen = True
+            return emitted
 
         if etype == "assistant":
             message = event.get("message", {}) or {}
@@ -368,16 +406,11 @@ class LawMcpSession:
                     continue
                 btype = block.get("type")
                 if btype == "text":
-                    text = block.get("text", "") or ""
-                    if text:
-                        acc_text.append(text)
-                        await self._send({
-                            "type": "law_stream",
-                            "data": {"token": text, "done": False},
-                        })
-                        emitted = True
-                        if not self._disclaimer_seen and _DISCLAIMER[:20] in "".join(acc_text):
-                            self._disclaimer_seen = True
+                    # Skip: the full assistant turn arrives here as a
+                    # consolidated block AFTER all deltas have been emitted
+                    # via stream_event. Re-emitting would duplicate the
+                    # answer on the client.
+                    continue
                 elif btype == "tool_use":
                     # Guard: tool_use after disclaimer = rule violation
                     if self._disclaimer_seen:

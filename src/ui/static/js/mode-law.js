@@ -559,15 +559,19 @@ class LawManager {
       const typing = this._chat.querySelector('.law-typing');
       if (typing) typing.remove();
       const el = document.createElement('div');
-      el.className = 'law-msg law-msg-ai';
+      el.className = 'law-msg law-msg-ai law-msg-streaming';
       this._chat.appendChild(el);
       this._currentAssistantEl = el;
       this._streamText = '';
       this._isStreaming = true;
+      this._lastRenderAt = 0;
     }
     if (data.done) {
       if (this._currentAssistantEl && this._streamText) {
         LawManager._renderMarkdown(this._currentAssistantEl, this._streamText);
+      }
+      if (this._currentAssistantEl) {
+        this._currentAssistantEl.classList.remove('law-msg-streaming');
       }
       this._currentAssistantEl = null;
       this._streamText = '';
@@ -581,7 +585,15 @@ class LawManager {
       this._input.focus();
     } else if (data.token) {
       this._streamText += data.token;
-      this._currentAssistantEl.textContent = this._streamText;
+      // Progressive markdown rendering — re-parse the accumulating buffer
+      // so headings, blockquotes (인용), and tables formalize as soon as
+      // their boundaries arrive. Throttle to ~30 ms to avoid thrashing
+      // the DOM when deltas burst in.
+      const now = performance.now();
+      if (now - (this._lastRenderAt || 0) > 30) {
+        LawManager._renderMarkdown(this._currentAssistantEl, this._streamText);
+        this._lastRenderAt = now;
+      }
       this._chat.scrollTop = this._chat.scrollHeight;
     }
   }
