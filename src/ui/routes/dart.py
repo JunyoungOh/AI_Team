@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.config.settings import get_settings
-from src.dart.session import DartSession
+from src.dart.mcp_session import DartMcpSession
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ async def dart_endpoint(ws: WebSocket):
         return
 
     user_id = user["sub"] if user else ""
-    session = DartSession(ws, user_id=user_id)
+    session = DartMcpSession(ws, user_id=user_id)
 
     try:
         await session.run()

@@ -152,6 +152,18 @@ class DartClient:
             page_no: 페이지 번호
             page_count: 페이지당 건수 (1-100)
         """
+        # corp_code 유효성 검증 — DART 고유번호는 반드시 8자리 숫자.
+        # LLM 이 환각 중 잘못된 값(짧거나 문자 섞이거나)을 넘기면 조기에 에러로 잡아
+        # DART 에 의미없는 요청이 가지 않도록 한다.
+        if corp_code:
+            corp_code = str(corp_code).strip()
+            if len(corp_code) != 8 or not corp_code.isdigit():
+                raise DartAPIError(
+                    f"잘못된 corp_code 형식: '{corp_code}'. "
+                    "DART 고유번호는 정확히 8자리 숫자여야 합니다. "
+                    "resolve_corp_code 도구로 먼저 정확한 값을 조회하세요."
+                )
+
         # Open DART list.json 은 bgn_de 가 누락되면 빈 배열을 반환한다 (empirical).
         # 호출자(또는 LLM)가 날짜를 넘기지 않았을 때도 "최신 N년" 이 자동 조회되도록
         # 오늘 기준 12개월 범위를 디폴트로 채운다. 둘 중 하나만 있으면 나머지를 보완.

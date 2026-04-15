@@ -21,6 +21,13 @@
         "MEM0_API_KEY": "${MEM0_API_KEY}",
         "MEM0_DEFAULT_USER_ID": "enterprise-agent"
       }
+    },
+    "dart": {
+      "command": "python3",
+      "args": ["-m", "src.dart.mcp_server"],
+      "env": {
+        "DART_API_KEY": "${DART_API_KEY}"
+      }
     }
   }
 }
