@@ -1582,6 +1582,14 @@ class DiscussionManager {
         a.remove();
       });
       actions.appendChild(dlBtn);
+
+      var openBtn = document.createElement('button');
+      openBtn.className = 'disc-mode-btn';
+      openBtn.textContent = '\u2197 \uC0C8 \uD0ED\uC5D0\uC11C \uC5F4\uAE30';
+      openBtn.addEventListener('click', function() {
+        window.open(downloadUrl, '_blank', 'noopener');
+      });
+      actions.appendChild(openBtn);
     }
 
     var newBtn = document.createElement('button');
@@ -1596,29 +1604,36 @@ class DiscussionManager {
     header.appendChild(actions);
     report.appendChild(header);
 
-    /* Report body — parse HTML safely using DOMParser */
+    /* Report body — sandboxed iframe hosts the LLM's self-contained HTML.
+       Prefer loading via URL so CSS/JS inside the report cannot leak out
+       and the parent page's styles cannot leak in. If no URL is available
+       (e.g., report export disabled), fall back to srcdoc from the inline
+       HTML payload so the user still sees the report. */
     var body = document.createElement('div');
     body.className = 'disc-report-body';
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html, 'text/html');
-    while (doc.body.firstChild) {
-      body.appendChild(doc.body.firstChild);
+    body.style.cssText = 'padding:0;background:#ffffff;';
+
+    var iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-same-origin allow-popups';
+    iframe.style.cssText = 'width:100%;border:none;min-height:600px;display:block;background:#ffffff;';
+    iframe.setAttribute('title', '\uD1A0\uB860 \uB9AC\uD3EC\uD2B8');
+    iframe.addEventListener('load', function() {
+      try {
+        var doc = iframe.contentDocument;
+        if (!doc) return;
+        var h = doc.documentElement.scrollHeight;
+        if (h && h > 200) iframe.style.height = (h + 24) + 'px';
+      } catch (_) { /* cross-origin — leave default height */ }
+    });
+    if (downloadUrl) {
+      iframe.src = downloadUrl;
+    } else if (html) {
+      iframe.srcdoc = html;
     }
+    body.appendChild(iframe);
     report.appendChild(body);
 
     c.appendChild(report);
-
-    /* Auto-download */
-    if (downloadUrl) {
-      var topicStr2 = this._currentTopic || 'discussion';
-      var date2 = new Date().toISOString().slice(0, 10);
-      var a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = '\uD1A0\uB860\uB9AC\uD3EC\uD2B8_' + topicStr2.slice(0, 30) + '_' + date2 + '.html';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
   }
 
   _resetState() {
