@@ -51,6 +51,13 @@ class DartManager {
         display: flex; align-items: center; gap: 6px;
       }
       .dart-title .dart-title-dim { color: var(--dim); font-weight: 500; font-size: 0.85em; }
+      .dart-title-hint {
+        font-size: 0.78em; font-weight: 500; color: var(--dim);
+        padding: 3px 8px; border-radius: 6px;
+        background: rgba(250, 204, 21, 0.08);
+        border: 1px solid rgba(250, 204, 21, 0.25);
+        line-height: 1.35;
+      }
       .dart-mode-toggle {
         display: flex; background: var(--overlay-2); border-radius: 8px;
         padding: 2px; height: 28px;
@@ -429,6 +436,11 @@ class DartManager {
     title.appendChild(titleDim);
     toolbar.appendChild(title);
 
+    const hint = document.createElement('span');
+    hint.className = 'dart-title-hint';
+    hint.textContent = '💡 빅데이터를 읽어오는 기능이므로 AI가 집중할 수 있도록 다른 모드와 함께 사용하기보단 단독 사용을 권장합니다.';
+    toolbar.appendChild(hint);
+
     const effortToggle = this._buildToggle([
       ['flash', '⚡ Flash'],
       ['think', '💡 Think'],
@@ -577,25 +589,40 @@ class DartManager {
       const typing = this._chat.querySelector('.dart-typing');
       if (typing) typing.remove();
       const el = document.createElement('div');
-      el.className = 'dart-msg dart-msg-ai';
+      el.className = 'dart-msg dart-msg-ai dart-msg-streaming';
       this._chat.appendChild(el);
       this._currentAssistantEl = el;
       this._streamText = '';
       this._isStreaming = true;
+      this._lastRenderAt = 0;
     }
     if (data.done) {
       if (this._currentAssistantEl && this._streamText) {
         DartManager._renderMarkdown(this._currentAssistantEl, this._streamText);
       }
+      if (this._currentAssistantEl) {
+        this._currentAssistantEl.classList.remove('dart-msg-streaming');
+      }
       this._currentAssistantEl = null;
       this._streamText = '';
       this._isStreaming = false;
+      // Subprocess 종료 시점 — 답변 이후에 LLM 이 추가 tool_use 를 날려서
+      // 남은 .dart-typing 인디케이터들을 모두 제거. 그 툴들은 이미 백엔드에서
+      // 실행 완료됐으며 UI 에 인디케이터만 stale 로 남아있는 상태.
+      this._chat.querySelectorAll('.dart-typing').forEach((el) => el.remove());
       _dartSignalRunning(false);
       this._setInputEnabled(true);
       this._input.focus();
     } else if (data.token) {
       this._streamText += data.token;
-      this._currentAssistantEl.textContent = this._streamText;
+      // Progressive markdown rendering — re-parse the accumulating buffer
+      // so tables, headings, and paragraphs formalize as soon as their
+      // boundaries arrive. Throttle to ~30 ms to avoid thrashing the DOM.
+      const now = performance.now();
+      if (now - (this._lastRenderAt || 0) > 30) {
+        DartManager._renderMarkdown(this._currentAssistantEl, this._streamText);
+        this._lastRenderAt = now;
+      }
       this._chat.scrollTop = this._chat.scrollHeight;
     }
   }

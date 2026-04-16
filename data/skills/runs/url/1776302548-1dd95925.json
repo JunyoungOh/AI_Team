@@ -1,0 +1,11 @@
+{
+  "run_id": "1776302548-1dd95925",
+  "slug": "url",
+  "user_input": "https://open.law.go.kr/LSO/information/guide.do",
+  "result_text": "WebFetch 도구 사용 권한이 필요합니다. 권한을 허용해 주시면 해당 페이지 내용을 가져와 요약해 드리겠습니다.\n\n또는 직접 페이지 내용을 복사해서 붙여넣어 주시면 바로 요약해 드릴 수 있습니다.",
+  "status": "completed",
+  "tool_count": 2,
+  "duration_seconds": 13.93,
+  "started_at": "2026-04-16T01:22:28.856658+00:00",
+  "error_message": null
+}

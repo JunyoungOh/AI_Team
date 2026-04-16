@@ -56,3 +56,12 @@ data/workspace/*/input/*
 data/workspace/*/output/*
 !data/workspace/*/input/.gitkeep
 !data/workspace/*/output/.gitkeep
+
+# DART 캐시 — 7일 TTL로 자동 재다운로드되므로 추적 시 이력 오염 심함
+data/dart/
+
+# 개인 세션/비서 데이터 (잠재 PII)
+data/secretary/
+
+# Claude Code 로컬 설정 (개인별)
+.claude/

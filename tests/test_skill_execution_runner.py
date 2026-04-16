@@ -126,6 +126,83 @@ async def test_run_skill_streamer_failure_saved_as_error(tmp_path) -> None:
     assert "CLI 충돌" in (record.error_message or "")
 
 
+async def test_run_skill_auto_detects_webfetch_from_body(tmp_path) -> None:
+    """SKILL.md 본문에 WebFetch가 있으면 allowed_tools에 자동 추가."""
+    captured: dict = {}
+
+    async def fake_streamer(**kwargs):
+        captured.update(kwargs)
+        kwargs["on_event"]({
+            "action": "completed",
+            "elapsed": 1.0,
+            "tool_count": 1,
+            "timed_out": False,
+        })
+        return ("요약 결과", 1, False)
+
+    web_skill_body = (
+        "# URL 요약 스킬\n\n"
+        "`WebFetch` 도구를 사용해 페이지를 가져온다."
+    )
+    with patch(
+        "src.skill_builder.execution_runner.load_skill_for_execution",
+        return_value=_make_ctx(body=web_skill_body),
+    ), patch(
+        "src.skill_builder.execution_runner.stream_skill_execution",
+        side_effect=fake_streamer,
+    ):
+        record = await run_skill(
+            slug="url",
+            user_input="https://example.com",
+            on_event=lambda e: None,
+            runs_root=tmp_path,
+        )
+
+    assert "WebFetch" in captured["allowed_tools"]
+    assert "WebSearch" not in captured["allowed_tools"]  # 본문에 없으므로 미포함
+    assert captured["cwd"] == "/tmp"  # MCP 불필요 → /tmp 유지
+    assert record.status == "completed"
+
+
+async def test_run_skill_auto_detects_mcp_tools_from_body(tmp_path) -> None:
+    """SKILL.md 본문에 mcp__*__* 패턴이 있으면 자동 감지 + 프로젝트 루트 승격."""
+    captured: dict = {}
+
+    async def fake_streamer(**kwargs):
+        captured.update(kwargs)
+        kwargs["on_event"]({
+            "action": "completed",
+            "elapsed": 1.0,
+            "tool_count": 2,
+            "timed_out": False,
+        })
+        return ("결과", 2, False)
+
+    mcp_skill_body = (
+        "# DART 공시 조회 스킬\n\n"
+        "`mcp__dart__resolve_corp_code`로 회사를 검색하고 "
+        "`mcp__dart__list_disclosures`로 공시를 조회합니다."
+    )
+    with patch(
+        "src.skill_builder.execution_runner.load_skill_for_execution",
+        return_value=_make_ctx(body=mcp_skill_body),
+    ), patch(
+        "src.skill_builder.execution_runner.stream_skill_execution",
+        side_effect=fake_streamer,
+    ):
+        record = await run_skill(
+            slug="dart-skill",
+            user_input="삼성전자 최근 공시",
+            on_event=lambda e: None,
+            runs_root=tmp_path,
+        )
+
+    assert "mcp__dart__resolve_corp_code" in captured["allowed_tools"]
+    assert "mcp__dart__list_disclosures" in captured["allowed_tools"]
+    assert captured["cwd"] != "/tmp"  # MCP 필요 → 프로젝트 루트로 승격
+    assert record.status == "completed"
+
+
 async def test_run_skill_loader_failure_saved_as_error(tmp_path) -> None:
     with patch(
         "src.skill_builder.execution_runner.load_skill_for_execution",

@@ -106,11 +106,34 @@
 .st-add-btn:hover { opacity: 0.85; }
 
 /* ── List ── */
+.st-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
 .st-list-title {
   font-size: 0.85em;
   font-weight: 700;
   color: var(--cv-dim, var(--cv-dim));
-  margin-bottom: 12px;
+  margin-bottom: 0;
+}
+.st-result-path {
+  font-size: 0.65em;
+  color: var(--cv-dim, var(--cv-dim));
+  background: transparent;
+  border: 1px solid var(--cv-border, var(--cv-border-hi));
+  border-radius: 8px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  font-family: monospace;
+}
+.st-result-path:hover {
+  opacity: 1;
+  border-color: var(--cv-accent, var(--blue));
+  color: var(--cv-accent, var(--blue));
 }
 .st-empty {
   font-size: 0.8em;
@@ -138,6 +161,17 @@
   font-size: 0.88em;
   font-weight: 700;
   color: var(--cv-text, var(--cv-text));
+}
+.st-run-count {
+  font-size: 0.65em;
+  font-weight: 600;
+  color: var(--cv-accent, var(--blue));
+  background: rgba(96,165,250,0.12);
+  border: 1px solid rgba(96,165,250,0.25);
+  border-radius: 10px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  white-space: nowrap;
 }
 .st-toggle {
   padding: 3px 10px;

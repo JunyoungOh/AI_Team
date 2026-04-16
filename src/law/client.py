@@ -98,13 +98,15 @@ class LawClient:
             or basic.get("법령명")
             or ""
         )
+        law_id = str(basic.get("법령ID") or "").strip()
         return {
             "mst": mst,
             "law_name": law_name,
+            "law_id": law_id,
             "promulgation_date": basic.get("공포일자", ""),
             "effective_date": basic.get("시행일자", ""),
             "articles": articles,
-            "source_url": _build_law_url(law_name, basic.get("공포일자", "")),
+            "source_url": _build_law_url(law_name, basic.get("공포일자", ""), mst),
             "fetched_at": _now_iso(),
         }
 
@@ -217,27 +219,79 @@ def _unwrap_single_root(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _build_law_url(law_name: str, date: str) -> str:
-    if not law_name:
-        return f"{_LAW_HTML_BASE}/lsSc.do"
-    if date:
-        return f"{_LAW_HTML_BASE}/법령/{law_name}/{date}"
-    return f"{_LAW_HTML_BASE}/법령/{law_name}"
+def _build_law_url(law_name: str, date: str, mst: str = "") -> str:
+    """Build a canonical law.go.kr URL that actually renders content.
+
+    The old ``/법령/{name}/{date}`` slug format returns HTTP 200 but only
+    a 1.2KB empty stub page (white screen for the user) — law.go.kr removed
+    that route without updating the redirect. The correct public detail
+    page URL is ``/LSW/lsInfoP.do?lsiSeq={MST}`` which returns the full
+    ~140KB law content.
+
+    Important: ``lsiSeq`` takes the **MST (법령일련번호)**, NOT the 법령ID.
+    They are different identifiers — e.g. 근로기준법 has law_id=001872 and
+    MST=265959. Passing law_id=001872 resolves to "축우도살제한법" (a
+    completely different law) because law_id and MST use overlapping
+    numeric ranges. Always pass MST.
+
+    Fallbacks when we don't have MST:
+    - ``lsSc.do?query={name}`` — search page, always lands on something real
+    - ``lsSc.do`` — bare search UI when even the name is missing
+    """
+    if mst:
+        return f"{_LAW_HTML_BASE}/LSW/lsInfoP.do?lsiSeq={mst}"
+    if law_name:
+        return f"{_LAW_HTML_BASE}/lsSc.do?query={law_name}"
+    return f"{_LAW_HTML_BASE}/lsSc.do"
 
 
 def _normalise_law_hit(item: dict[str, Any]) -> dict[str, Any]:
     name = item.get("법령명한글") or item.get("법령명_한글") or item.get("법령명", "")
     mst = str(item.get("법령일련번호") or item.get("MST") or "").strip()
+    law_id = str(item.get("법령ID", "")).strip()
     promulgation = item.get("공포일자", "")
     return {
         "law_name": name,
         "mst": mst,
-        "law_id": str(item.get("법령ID", "")).strip(),
+        "law_id": law_id,
         "promulgation_date": promulgation,
         "effective_date": item.get("시행일자", ""),
         "ministry": item.get("소관부처명", ""),
-        "source_url": _build_law_url(name, promulgation),
+        "source_url": _build_law_url(name, promulgation, mst),
     }
+
+
+def _collect_paragraph_text(node: Any) -> list[str]:
+    """Recursively collect all body text from 항/호/목 nesting.
+
+    law.go.kr returns articles in a tiered structure:
+        조문단위 → 항 (paragraph, ①②③) → 호 (item, 1.2.3.) → 목 (sub-item, 가나다)
+    Simple articles have body in ``조문내용`` and no ``항``. Complex articles
+    have ONLY the title in ``조문내용`` and the real body split across the
+    ``항`` array. The old normalise function only read ``조문내용`` and missed
+    every complex article — symptom: "근로기준법 제23조: title only, no body".
+    """
+    parts: list[str] = []
+    if isinstance(node, dict):
+        # Direct body fields at this level
+        for key in ("항내용", "호내용", "목내용"):
+            val = node.get(key)
+            if isinstance(val, str) and val.strip():
+                parts.append(val.strip())
+        # Recurse into nested children
+        for key in ("항", "호", "목"):
+            child = node.get(key)
+            if child is None:
+                continue
+            if isinstance(child, list):
+                for c in child:
+                    parts.extend(_collect_paragraph_text(c))
+            else:
+                parts.extend(_collect_paragraph_text(child))
+    elif isinstance(node, list):
+        for c in node:
+            parts.extend(_collect_paragraph_text(c))
+    return parts
 
 
 def _normalise_article(item: dict[str, Any]) -> dict[str, Any]:
@@ -249,12 +303,18 @@ def _normalise_article(item: dict[str, Any]) -> dict[str, Any]:
     except (ValueError, TypeError):
         compound = jo_code.zfill(6)
     title = item.get("조문제목", "")
-    text = (
-        item.get("조문내용")
-        or item.get("조문본문")
-        or ""
-    )
-    cleaned = _clean_text(text)
+    # The title line — 조문내용 for simple articles is the full body, for
+    # complex articles it's just "제23조(해고 등의 제한)" with the real body
+    # split into paragraphs (항).
+    title_line = (item.get("조문내용") or item.get("조문본문") or "").strip()
+    paragraph_texts = _collect_paragraph_text(item)
+    if paragraph_texts:
+        # Complex article: assemble title line + all paragraphs
+        full_text = title_line + "\n" + "\n".join(paragraph_texts) if title_line else "\n".join(paragraph_texts)
+    else:
+        # Simple article: title_line IS the full body
+        full_text = title_line
+    cleaned = _clean_text(full_text)
     # law.go.kr mixes 편/장/절/관 headings into the 조문단위 list alongside
     # actual articles. Two signals we use to skip them:
     # - "조문여부" field: "조문" = article, anything else (편장, 편장명, etc.) = heading

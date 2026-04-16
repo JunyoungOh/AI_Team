@@ -51,6 +51,13 @@ class LawManager {
         display: flex; align-items: center; gap: 6px;
       }
       .law-title .law-title-dim { color: var(--dim); font-weight: 500; font-size: 0.85em; }
+      .law-title-hint {
+        font-size: 0.78em; font-weight: 500; color: var(--dim);
+        padding: 3px 8px; border-radius: 6px;
+        background: rgba(250, 204, 21, 0.08);
+        border: 1px solid rgba(250, 204, 21, 0.25);
+        line-height: 1.35;
+      }
       .law-mode-toggle {
         display: flex; background: var(--overlay-2); border-radius: 8px;
         padding: 2px; height: 28px;
@@ -406,6 +413,11 @@ class LawManager {
     title.appendChild(titleDim);
     toolbar.appendChild(title);
 
+    const hint = document.createElement('span');
+    hint.className = 'law-title-hint';
+    hint.textContent = '💡 빅데이터를 읽어오는 기능이므로 AI가 집중할 수 있도록 다른 모드와 함께 사용하기보단 단독 사용을 권장합니다.';
+    toolbar.appendChild(hint);
+
     const effortToggle = this._buildToggle([
       ['flash', '⚡ Flash'],
       ['think', '💡 Think'],
@@ -559,25 +571,41 @@ class LawManager {
       const typing = this._chat.querySelector('.law-typing');
       if (typing) typing.remove();
       const el = document.createElement('div');
-      el.className = 'law-msg law-msg-ai';
+      el.className = 'law-msg law-msg-ai law-msg-streaming';
       this._chat.appendChild(el);
       this._currentAssistantEl = el;
       this._streamText = '';
       this._isStreaming = true;
+      this._lastRenderAt = 0;
     }
     if (data.done) {
       if (this._currentAssistantEl && this._streamText) {
         LawManager._renderMarkdown(this._currentAssistantEl, this._streamText);
       }
+      if (this._currentAssistantEl) {
+        this._currentAssistantEl.classList.remove('law-msg-streaming');
+      }
       this._currentAssistantEl = null;
       this._streamText = '';
       this._isStreaming = false;
+      // Subprocess 종료 시점 — 답변 이후에 LLM 이 추가 tool_use 를 날려서
+      // 남은 .law-typing 인디케이터들을 모두 제거. 그 툴들은 이미 백엔드에서
+      // 실행 완료됐으며 UI 에 인디케이터만 stale 로 남아있는 상태.
+      this._chat.querySelectorAll('.law-typing').forEach((el) => el.remove());
       _lawSignalRunning(false);
       this._setInputEnabled(true);
       this._input.focus();
     } else if (data.token) {
       this._streamText += data.token;
-      this._currentAssistantEl.textContent = this._streamText;
+      // Progressive markdown rendering — re-parse the accumulating buffer
+      // so headings, blockquotes (인용), and tables formalize as soon as
+      // their boundaries arrive. Throttle to ~30 ms to avoid thrashing
+      // the DOM when deltas burst in.
+      const now = performance.now();
+      if (now - (this._lastRenderAt || 0) > 30) {
+        LawManager._renderMarkdown(this._currentAssistantEl, this._streamText);
+        this._lastRenderAt = now;
+      }
       this._chat.scrollTop = this._chat.scrollHeight;
     }
   }

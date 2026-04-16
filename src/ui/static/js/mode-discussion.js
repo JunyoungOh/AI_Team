@@ -53,6 +53,9 @@ class DiscussionManager {
     this._injectionMode = false;
     this._humanTimerIv = null;
     this._reportShown = false;
+    this._reportTimerIv = null;
+    this._reportTimerStart = 0;
+    this._reportStageText = '';
   }
 
   /* ═══════════════════════════════════════════════════
@@ -681,8 +684,21 @@ class DiscussionManager {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
       var participants = data.participants || [];
+      var humanSuggestion = data.human_suggestion || null;
       if (participants.length > 0 && cards) {
         while (cards.firstChild) cards.removeChild(cards.firstChild);
+        if (self._discMode === 'participate') {
+          self._addHumanParticipantCard();
+          if (humanSuggestion) {
+            var hCard = cards.querySelector('.disc-participant-card.is-human');
+            if (hCard) {
+              var hName = hCard.querySelector('.disc-human-name');
+              var hPersona = hCard.querySelector('.disc-human-persona');
+              if (hName && humanSuggestion.name) hName.value = humanSuggestion.name;
+              if (hPersona && humanSuggestion.persona) hPersona.value = humanSuggestion.persona;
+            }
+          }
+        }
         participants.forEach(function(p) { self._addParticipantCard(p); });
       }
     } catch (e) {
@@ -958,6 +974,8 @@ class DiscussionManager {
       startData.human_participant = humanData;
       this._participantColors['__human__'] = '#FF6B6B';
       this._participantNames['__human__'] = humanData.name;
+      this._participantPersonas['__human__'] = humanData.persona || '';
+      this._participantOrder.push('__human__');
     }
 
     this._lastSpeakerId = null;
@@ -1165,8 +1183,9 @@ class DiscussionManager {
   }
 
   _createPanel(id, idx) {
+    var isHuman = (id === '__human__');
     var panel = document.createElement('div');
-    panel.className = 'disc-panel';
+    panel.className = 'disc-panel' + (isHuman ? ' is-human' : '');
     panel.id = 'disc-panel-' + id;
 
     var header = document.createElement('div');
@@ -1180,6 +1199,13 @@ class DiscussionManager {
     name.className = 'disc-panel-name';
     name.textContent = this._participantNames[id] || id;
     header.appendChild(name);
+
+    if (isHuman) {
+      var badge = document.createElement('span');
+      badge.className = 'disc-human-badge';
+      badge.textContent = '나';
+      header.appendChild(badge);
+    }
 
     panel.appendChild(header);
 
@@ -1236,6 +1262,7 @@ class DiscussionManager {
       disc_moderator: function(d) { self._onModerator(d); },
       disc_round: function(d) { self._onRound(d); },
       disc_report: function(d) { self._onReport(d); },
+      disc_report_stage: function(d) { self._onReportStage(d); },
       disc_complete: function(d) { self._onComplete(d); },
       disc_human_turn: function(d) { self._onHumanTurn(d); },
       disc_search_start: function(d) { self._onSearchStart(d); },
@@ -1273,7 +1300,7 @@ class DiscussionManager {
       closing: '\uD1A0\uB860 \uB9C8\uBB34\uB9AC \uC911...',
       report: '\uC778\uC0AC\uC774\uD2B8 \uB9AC\uD3EC\uD2B8 \uC0DD\uC131 \uC911...',
     };
-    if (phaseLabels[d.phase]) {
+    if (phaseLabels[d.phase] && d.phase !== 'report') {
       this._showModeratorText(phaseLabels[d.phase]);
     }
 
@@ -1287,12 +1314,60 @@ class DiscussionManager {
       this._showModeratorText('\uD83D\uDCCB \uD1A0\uB860 \uB0B4\uC6A9\uC744 \uC815\uB9AC\uD558\uACE0 \uC788\uC2B5\uB2C8\uB2E4...');
     }
     if (d.phase === 'report') {
-      this._showModeratorText('\uD83D\uDCCA \uC778\uC0AC\uC774\uD2B8 \uB9AC\uD3EC\uD2B8 \uC0DD\uC131 \uC911...');
+      /* Start the live report timer. Updates every second with elapsed time
+         + rotating reassurance. The timer is stopped by _onReport() when
+         the report arrives, or _onComplete() / _onError() on teardown. */
+      this._reportStageText = '\uD83E\uDD16 \uB9AC\uD3EC\uD2B8 \uC791\uC131 \uC911';
+      this._startReportTimer();
+    }
+  }
+
+  _startReportTimer() {
+    this._stopReportTimer();
+    this._reportTimerStart = Date.now();
+    var self = this;
+    var render = function() {
+      var elapsed = Math.floor((Date.now() - self._reportTimerStart) / 1000);
+      var mm = Math.floor(elapsed / 60);
+      var ss = elapsed % 60;
+      var timeStr = (mm > 0 ? mm + '\uBD84 ' : '') + ss + '\uCD08 \uACBD\uACFC';
+      self._showModeratorText(self._reportStageText + ' \u00B7 ' + timeStr);
+    };
+    render();
+    this._reportTimerIv = setInterval(render, 1000);
+  }
+
+  _stopReportTimer() {
+    if (this._reportTimerIv) {
+      clearInterval(this._reportTimerIv);
+      this._reportTimerIv = null;
+    }
+  }
+
+  _onReportStage(d) {
+    if (!d || !d.message) return;
+    this._reportStageText = d.message;
+    /* Force an immediate render so the user sees the stage change without
+       waiting for the next 1-second tick. */
+    if (this._reportTimerIv) {
+      var elapsed = Math.floor((Date.now() - this._reportTimerStart) / 1000);
+      var mm = Math.floor(elapsed / 60);
+      var ss = elapsed % 60;
+      var timeStr = (mm > 0 ? mm + '\uBD84 ' : '') + ss + '\uCD08 \uACBD\uACFC';
+      this._showModeratorText(this._reportStageText + ' \u00B7 ' + timeStr);
     }
   }
 
   _onUtterance(d) {
     var speakerId = d.speaker_id;
+
+    /* 사용자 메시지 중복 방지 — _sendHumanInput에서 이미 표시했으므로
+       동일 내용의 백엔드 에코는 스킵. 타임아웃 메시지 등은 통과. */
+    if (speakerId === '__human__' && this._lastHumanContent && d.content.trim() === this._lastHumanContent) {
+      this._lastHumanContent = null;
+      return;
+    }
+
     var msgArea = document.getElementById('disc-msgs-' + speakerId);
     if (!msgArea) return;
 
@@ -1325,7 +1400,15 @@ class DiscussionManager {
 
   _onModerator(d) {
     var targetName = this._participantNames[d.next_speaker_id] || d.next_speaker_id;
-    this._showModeratorText(targetName + '\uB2D8\uC5D0\uAC8C: ' + d.instruction);
+    var el = document.getElementById('disc-mod-text');
+    if (el) {
+      el.textContent = '';
+      var targetSpan = document.createElement('span');
+      targetSpan.className = 'disc-mod-target';
+      targetSpan.textContent = targetName + '\uB2D8\uC5D0\uAC8C: ';
+      el.appendChild(targetSpan);
+      el.appendChild(document.createTextNode(d.instruction || ''));
+    }
     this._setSpeaking(d.next_speaker_id);
   }
 
@@ -1338,12 +1421,14 @@ class DiscussionManager {
   }
 
   _onReport(d) {
+    this._stopReportTimer();
     this._showReport(d.html, d.download_url);
     _discSignalRunning(false);
   }
 
   _onComplete(d) {
     this._stopTimer();
+    this._stopReportTimer();
     if (d && d.cancelled) {
       this._showModeratorText('\u23F9 \uD1A0\uB860\uC774 \uC911\uB2E8\uB418\uC5C8\uC2B5\uB2C8\uB2E4.');
     } else {
@@ -1351,6 +1436,24 @@ class DiscussionManager {
     }
     _discSignalRunning(false);
     if (window._modeManager) window._modeManager.setModeRunning('discussion', false);
+
+    /* Morph the stop button into a "back to setup" button whenever the live
+       grid is still on-screen (i.e. no report took over). Covers both user
+       cancellation and edge cases where completion fires without a report. */
+    if (!this._reportShown && this._container) {
+      var stopBtn = this._container.querySelector('.disc-stop-btn');
+      if (stopBtn) {
+        var freshBtn = stopBtn.cloneNode(false);
+        freshBtn.textContent = '\u2190 \uCC98\uC74C\uC73C\uB85C';
+        freshBtn.classList.add('disc-back-btn');
+        var self = this;
+        freshBtn.addEventListener('click', function() {
+          self._resetState();
+          self._showSetup();
+        });
+        stopBtn.parentNode.replaceChild(freshBtn, stopBtn);
+      }
+    }
   }
 
   _onHumanTurn(d) {
@@ -1388,6 +1491,22 @@ class DiscussionManager {
     area.onkeydown = function(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); self._sendHumanInput(); }
     };
+
+    /* 사용자 패널 speaking 상태 + 실시간 타이핑 프리뷰 */
+    this._setSpeaking('__human__');
+    var msgArea = document.getElementById('disc-msgs-__human__');
+    if (msgArea) {
+      var preview = document.createElement('div');
+      preview.className = 'disc-panel-msg disc-typing-preview';
+      preview.id = 'disc-human-typing-preview';
+      preview.textContent = '';
+      msgArea.appendChild(preview);
+      area.oninput = function() {
+        preview.textContent = area.value || '';
+        msgArea.scrollTop = msgArea.scrollHeight;
+      };
+    }
+
     this._stopTimer();
   }
 
@@ -1398,18 +1517,49 @@ class DiscussionManager {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'disc_human_input', data: { content: content } }));
     }
+
+    /* 패널에 즉시 표시 (백엔드 에코 기다리지 않음) */
+    this._showHumanMessage(content);
+    this._lastHumanContent = content;
+
     clearInterval(this._humanTimerIv);
     this._disableHumanInput();
     if (area) area.value = '';
+
+    /* 타이핑 프리뷰 제거 */
+    var preview = document.getElementById('disc-human-typing-preview');
+    if (preview) preview.remove();
+  }
+
+  _showHumanMessage(content) {
+    var msgArea = document.getElementById('disc-msgs-__human__');
+    if (!msgArea) return;
+    var msgDiv = document.createElement('div');
+    msgDiv.className = 'disc-panel-msg';
+    var rendered = this._renderContent(content);
+    var tempDiv = document.createElement('div');
+    tempDiv.className = 'disc-panel-msg-inner';
+    var parser = new DOMParser();
+    var doc = parser.parseFromString('<div>' + rendered + '</div>', 'text/html');
+    while (doc.body.firstChild && doc.body.firstChild.firstChild) {
+      tempDiv.appendChild(doc.body.firstChild.firstChild);
+    }
+    this._highlightNamesInTree(tempDiv);
+    msgDiv.appendChild(tempDiv);
+    msgArea.appendChild(msgDiv);
+    msgArea.scrollTop = msgArea.scrollHeight;
+    this._setSpeaking('__human__');
   }
 
   _disableHumanInput() {
     var area = document.getElementById('disc-human-textarea');
     var btn = document.getElementById('disc-human-send');
     var timerEl = document.getElementById('disc-human-timer');
-    if (area) { area.disabled = true; area.placeholder = '\uD1A0\uB860 \uC9C4\uD589 \uC911...'; }
+    if (area) { area.disabled = true; area.placeholder = '\uD1A0\uB860 \uC9C4\uD589 \uC911...'; area.oninput = null; }
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
     if (timerEl) timerEl.style.display = 'none';
+    var preview = document.getElementById('disc-human-typing-preview');
+    if (preview) preview.remove();
     this._startTimer();
   }
 
@@ -1638,6 +1788,7 @@ class DiscussionManager {
 
   _resetState() {
     this._stopTimer();
+    this._stopReportTimer();
     this._participantColors = {};
     this._participantNames = {};
     this._participantPersonas = {};
