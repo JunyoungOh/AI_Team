@@ -14,6 +14,7 @@ run_skill(slug, user_input, on_event):
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -29,6 +30,30 @@ from src.skill_builder.skill_loader import (
 
 _BUILTIN_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
 
+# Claude Code 빌트인 도구 중 SKILL.md 본문에서 참조하면 자동 허용할 목록.
+# _BUILTIN_TOOLS는 모든 스킬에 무조건 부여되고,
+# _GRANTABLE_BUILTINS는 SKILL.md 본문에 도구명이 등장할 때만 부여된다.
+_GRANTABLE_BUILTINS = ["WebFetch", "WebSearch"]
+
+# SKILL.md 본문에서 mcp__<server>__<tool> 참조를 자동 감지하는 정규식.
+# skill_metadata.json 누락 / 서버 매핑 미비 시 안전망으로 작동한다.
+_MCP_TOOL_RE = re.compile(r"mcp__[\w-]+__[\w]+")
+
+
+def _detect_required_builtins(skill_body: str) -> list[str]:
+    """SKILL.md 본문에서 참조된 Claude Code 빌트인 도구를 자동 감지."""
+    return [t for t in _GRANTABLE_BUILTINS if t in skill_body]
+
+
+def _detect_mcp_tools_from_body(skill_body: str) -> list[str]:
+    """SKILL.md 본문에서 직접 참조된 MCP 도구명(mcp__*__*)을 자동 감지.
+
+    skill_metadata.json이 누락되거나 _build_allowed_tools_for_mcps의
+    하드코딩 맵에 없는 서버라도, SKILL.md에 도구명이 명시되어 있으면
+    allowed_tools에 추가한다.
+    """
+    return list(set(_MCP_TOOL_RE.findall(skill_body)))
+
 
 def _build_allowed_tools_for_mcps(required_mcps: list[str]) -> list[str]:
     """required_mcps를 mcp__<server>__<tool> 형식으로 변환.
@@ -42,8 +67,8 @@ def _build_allowed_tools_for_mcps(required_mcps: list[str]) -> list[str]:
     때는 ``src/utils/tool_definitions.py``와 실제 스트림에서 관찰되는
     도구명으로 검증할 것.
 
-    후속 과제: skill_metadata.json에 구체적 tool 이름(``required_tools``)
-    필드를 추가하면 이 매핑이 불필요해진다.
+    SKILL.md 본문에서의 자동 감지(_detect_mcp_tools_from_body)가 안전망으로
+    작동하므로, 여기에 누락되어도 치명적이지는 않다.
     """
     known_tools_by_server = {
         "serper": ["mcp__serper__google_search"],
@@ -60,9 +85,23 @@ def _build_allowed_tools_for_mcps(required_mcps: list[str]) -> list[str]:
             "mcp__mem0__search_memories",
             "mcp__mem0__add_memory",
         ],
-        # context7는 플러그인 네임스페이스가 필요할 수 있어 초기 맵에서 제외.
-        # required_mcps=["context7"] 스킬은 알려진 도구가 없어서 빈 리스트가
-        # 반환되고, 호출자는 빌트인 도구만으로 진행한다.
+        "dart": [
+            "mcp__dart__resolve_corp_code",
+            "mcp__dart__list_disclosures",
+            "mcp__dart__get_company",
+            "mcp__dart__get_document",
+            "mcp__dart__get_financial",
+            "mcp__dart__list_shareholder_reports",
+            "mcp__dart__list_dividend_events",
+        ],
+        "law": [
+            "mcp__law__law_search",
+            "mcp__law__law_get",
+            "mcp__law__law_get_article",
+            "mcp__law__prec_search",
+            "mcp__law__prec_get",
+            "mcp__law__expc_search",
+        ],
     }
     out: list[str] = []
     for server in required_mcps:
@@ -110,14 +149,29 @@ async def run_skill(
         on_event({"action": "error", "message": f"스킬 로드 실패: {e}"})
         return record
 
-    if ctx.isolation_mode == IsolationMode.ISOLATED:
-        cwd = "/tmp"
-        allowed_tools = list(_BUILTIN_TOOLS)
-    else:
+    extra_builtins = _detect_required_builtins(ctx.skill_body)
+    extra_mcp_tools = _detect_mcp_tools_from_body(ctx.skill_body)
+
+    # MCP 도구가 body에서 감지되면, skill_metadata.json 누락과 무관하게
+    # 프로젝트 루트에서 실행 (MCP 서버 설정이 .mcp.json에 있으므로).
+    needs_project_root = (
+        ctx.isolation_mode == IsolationMode.WITH_MCPS or bool(extra_mcp_tools)
+    )
+
+    if needs_project_root:
         cwd = os.getcwd()
-        allowed_tools = list(_BUILTIN_TOOLS) + _build_allowed_tools_for_mcps(
-            ctx.required_mcps
+        allowed_tools = (
+            list(_BUILTIN_TOOLS)
+            + extra_builtins
+            + _build_allowed_tools_for_mcps(ctx.required_mcps)
+            + extra_mcp_tools
         )
+    else:
+        cwd = "/tmp"
+        allowed_tools = list(_BUILTIN_TOOLS) + extra_builtins
+
+    # 중복 제거 (매핑 경로 + body 감지 경로가 겹칠 수 있음)
+    allowed_tools = list(dict.fromkeys(allowed_tools))
 
     system_prompt = _build_system_prompt(ctx.skill_body)
 
