@@ -974,6 +974,8 @@ class DiscussionManager {
       startData.human_participant = humanData;
       this._participantColors['__human__'] = '#FF6B6B';
       this._participantNames['__human__'] = humanData.name;
+      this._participantPersonas['__human__'] = humanData.persona || '';
+      this._participantOrder.push('__human__');
     }
 
     this._lastSpeakerId = null;
@@ -1181,8 +1183,9 @@ class DiscussionManager {
   }
 
   _createPanel(id, idx) {
+    var isHuman = (id === '__human__');
     var panel = document.createElement('div');
-    panel.className = 'disc-panel';
+    panel.className = 'disc-panel' + (isHuman ? ' is-human' : '');
     panel.id = 'disc-panel-' + id;
 
     var header = document.createElement('div');
@@ -1196,6 +1199,13 @@ class DiscussionManager {
     name.className = 'disc-panel-name';
     name.textContent = this._participantNames[id] || id;
     header.appendChild(name);
+
+    if (isHuman) {
+      var badge = document.createElement('span');
+      badge.className = 'disc-human-badge';
+      badge.textContent = '나';
+      header.appendChild(badge);
+    }
 
     panel.appendChild(header);
 
@@ -1350,6 +1360,14 @@ class DiscussionManager {
 
   _onUtterance(d) {
     var speakerId = d.speaker_id;
+
+    /* 사용자 메시지 중복 방지 — _sendHumanInput에서 이미 표시했으므로
+       동일 내용의 백엔드 에코는 스킵. 타임아웃 메시지 등은 통과. */
+    if (speakerId === '__human__' && this._lastHumanContent && d.content.trim() === this._lastHumanContent) {
+      this._lastHumanContent = null;
+      return;
+    }
+
     var msgArea = document.getElementById('disc-msgs-' + speakerId);
     if (!msgArea) return;
 
@@ -1447,6 +1465,22 @@ class DiscussionManager {
     area.onkeydown = function(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); self._sendHumanInput(); }
     };
+
+    /* 사용자 패널 speaking 상태 + 실시간 타이핑 프리뷰 */
+    this._setSpeaking('__human__');
+    var msgArea = document.getElementById('disc-msgs-__human__');
+    if (msgArea) {
+      var preview = document.createElement('div');
+      preview.className = 'disc-panel-msg disc-typing-preview';
+      preview.id = 'disc-human-typing-preview';
+      preview.textContent = '';
+      msgArea.appendChild(preview);
+      area.oninput = function() {
+        preview.textContent = area.value || '';
+        msgArea.scrollTop = msgArea.scrollHeight;
+      };
+    }
+
     this._stopTimer();
   }
 
@@ -1457,18 +1491,49 @@ class DiscussionManager {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'disc_human_input', data: { content: content } }));
     }
+
+    /* 패널에 즉시 표시 (백엔드 에코 기다리지 않음) */
+    this._showHumanMessage(content);
+    this._lastHumanContent = content;
+
     clearInterval(this._humanTimerIv);
     this._disableHumanInput();
     if (area) area.value = '';
+
+    /* 타이핑 프리뷰 제거 */
+    var preview = document.getElementById('disc-human-typing-preview');
+    if (preview) preview.remove();
+  }
+
+  _showHumanMessage(content) {
+    var msgArea = document.getElementById('disc-msgs-__human__');
+    if (!msgArea) return;
+    var msgDiv = document.createElement('div');
+    msgDiv.className = 'disc-panel-msg';
+    var rendered = this._renderContent(content);
+    var tempDiv = document.createElement('div');
+    tempDiv.className = 'disc-panel-msg-inner';
+    var parser = new DOMParser();
+    var doc = parser.parseFromString('<div>' + rendered + '</div>', 'text/html');
+    while (doc.body.firstChild && doc.body.firstChild.firstChild) {
+      tempDiv.appendChild(doc.body.firstChild.firstChild);
+    }
+    this._highlightNamesInTree(tempDiv);
+    msgDiv.appendChild(tempDiv);
+    msgArea.appendChild(msgDiv);
+    msgArea.scrollTop = msgArea.scrollHeight;
+    this._setSpeaking('__human__');
   }
 
   _disableHumanInput() {
     var area = document.getElementById('disc-human-textarea');
     var btn = document.getElementById('disc-human-send');
     var timerEl = document.getElementById('disc-human-timer');
-    if (area) { area.disabled = true; area.placeholder = '\uD1A0\uB860 \uC9C4\uD589 \uC911...'; }
+    if (area) { area.disabled = true; area.placeholder = '\uD1A0\uB860 \uC9C4\uD589 \uC911...'; area.oninput = null; }
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
     if (timerEl) timerEl.style.display = 'none';
+    var preview = document.getElementById('disc-human-typing-preview');
+    if (preview) preview.remove();
     this._startTimer();
   }
 
