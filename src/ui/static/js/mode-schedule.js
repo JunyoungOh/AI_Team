@@ -253,10 +253,30 @@ var ScheduleTeamManager = (function () {
     wrapper.appendChild(form);
 
     // 스케줄 목록
+    var listHeader = document.createElement('div');
+    listHeader.className = 'st-list-header';
+
     var listTitle = document.createElement('h3');
     listTitle.className = 'st-list-title';
     listTitle.textContent = '등록된 자동실행 (' + _schedules.length + ')';
-    wrapper.appendChild(listTitle);
+    listHeader.appendChild(listTitle);
+
+    var pathBtn = document.createElement('button');
+    pathBtn.className = 'st-result-path';
+    pathBtn.textContent = '📂 data/reports/';
+    pathBtn.title = '결과물 저장 폴더 열기';
+    pathBtn.addEventListener('click', function () {
+      fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'data/reports' }),
+      }).then(function (res) { return res.json(); }).then(function (data) {
+        if (!data.ok) alert('폴더를 찾을 수 없습니다.');
+      });
+    });
+    listHeader.appendChild(pathBtn);
+
+    wrapper.appendChild(listHeader);
 
     if (_schedules.length === 0) {
       var empty = document.createElement('div');
