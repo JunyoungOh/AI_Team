@@ -14,5 +14,21 @@
     "required_mcps": [],
     "source": "created",
     "created_at": "2026-04-09T08:42:45.626793+00:00"
+  },
+  {
+    "slug": "1776140469-5e0f68",
+    "name": "긴 영어 문장을 한글로 번역하고 번역한 본문 위에 세 줄 요약도 작성해주는 스킬",
+    "skill_path": "/Users/elvis.costello/Desktop/backup_web_local/data/skills/installed/skill-tab-1776140469-5e0f68",
+    "required_mcps": [],
+    "source": "created",
+    "created_at": "2026-04-14T04:26:07.231861+00:00"
+  },
+  {
+    "slug": "url",
+    "name": "웹페이지 URL을 공유해주면, 해당 웹페이지의 내용을 요약 정리해주는 스킬",
+    "skill_path": "/Users/elvis.costello/Desktop/backup_web_local/data/skills/installed/skill-tab-url",
+    "required_mcps": [],
+    "source": "created",
+    "created_at": "2026-04-16T01:21:09.225082+00:00"
   }
 ]

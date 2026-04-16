@@ -1,0 +1,2 @@
+{"timestamp": "2026-04-14T01:34:46.636096+00:00", "event": "execution_completed", "severity": "low", "title": "Completed: AI 업계 일일 뉴스 브리핑", "message": "Execution e2ea97b8-48f finished in 287s", "job_id": "company_schedule_a440103fd74e", "execution_id": "e2ea97b8-48f"}
+{"timestamp": "2026-04-15T01:33:18.876287+00:00", "event": "execution_completed", "severity": "low", "title": "Completed: AI 업계 일일 뉴스 브리핑", "message": "Execution 27c88d78-997 finished in 199s", "job_id": "company_schedule_a440103fd74e", "execution_id": "27c88d78-997"}
